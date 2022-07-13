@@ -426,7 +426,7 @@ for r in reversed(ranks):
                         print('I', end="")
 
     print()
-
+    # what if I change something?
 exit()
 
 
