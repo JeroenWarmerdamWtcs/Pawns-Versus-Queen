@@ -15,6 +15,6 @@ if __name__ == '__main__':
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
 
-nu iets gewijzigd
+Nu iets meer gewijzigd.
 
 
