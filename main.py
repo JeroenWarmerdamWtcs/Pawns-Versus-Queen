@@ -1,4 +1,5 @@
 from itertools import combinations, product
+from enum import Enum
 
 # This is a Python script for solving the game "queen vs pawns":
 # The game start with the white pawns and the black queen
@@ -99,8 +100,11 @@ LAST_RANK = 8
 files = range(FIRST_FILE, LAST_FILE + 1)
 ranks = range(FIRST_RANK, LAST_RANK + 1)
 
-WHITE = 1
-BLACK = -1
+
+class Player(Enum):
+    WHITE = 1
+    BLACK = -1
+
 
 WIN = 1
 DRAW = 0
@@ -143,12 +147,13 @@ def move(queen_square, direction):
 
 class SetUp:
     def __init__(self):
-        self.turn = WHITE
+        self.turn = Player.WHITE
         self.queen = (FIRST_FILE, FIRST_RANK)
         self.pawns = [0] + [NOT_ON_BOARD] * 8  # we will not use self.pawns[0]
 
     def set_turn(self, turn):
-        assert turn in [WHITE, BLACK]
+        assert isinstance(turn, Player)
+        assert turn in [Player.WHITE, Player.BLACK]
         self.turn = turn
 
     def set_pawn(self, square):
@@ -169,10 +174,10 @@ class SetUp:
         nb_pawns = len(list(filter(lambda f: self.pawns[f] != NOT_ON_BOARD, self.pawns)))
         nb_pawns_on_last_rank = len(list(filter(lambda f: self.pawns[f] == LAST_FILE, self.pawns)))
 
-        if self.turn == WHITE:
+        if self.turn == Player.WHITE:
             return nb_pawns > 0 and nb_pawns_on_last_rank == 0 and not self.attacked_by_pawn(self.queen)
 
-        if self.turn == BLACK:
+        if self.turn == Player.BLACK:
             return nb_pawns_on_last_rank <= 1
 
     def occupied_by_pawn(self, square):
@@ -244,27 +249,27 @@ class Position:
         return copy
 
     def generate_next_positions(self):
-        if self.turn == WHITE:
+        if self.turn == Player.WHITE:
             for file in files:
                 rank = self.pawns[file]
                 if 2 <= rank < LAST_RANK and (file, rank + 1) != self.queen:
                     position = self.get_copy()
-                    position.turn = BLACK
+                    position.turn = Player.BLACK
                     position.move_pawn_forward(file)
                     yield position
                     if rank == 2 and (file, 4) != self.queen:
                         position = self.get_copy()
-                        position.turn = BLACK
+                        position.turn = Player.BLACK
                         position.move_pawn_forward_twice(file)
                         yield position
 
-        if self.turn == BLACK:
+        if self.turn == Player.BLACK:
             for d in DIRECTIONS:
                 new_queen = move(self.queen, d)
                 while on_board(new_queen):
                     if not self.attacked_by_pawn(new_queen):
                         position = self.get_copy()
-                        position.turn = WHITE
+                        position.turn = Player.WHITE
                         position.move_queen(new_queen)
                         yield position
                     if self.occupied_by_pawn(new_queen):
@@ -311,12 +316,12 @@ class Position:
         if result:
             return result
 
-        if self.turn == WHITE:
+        if self.turn == Player.WHITE:
             if all(map(lambda f: self.pawns[f] == NOT_ON_BOARD, files)):
                 evaluation_store[self.id()] = LOSE
                 return LOSE
 
-        if self.turn == BLACK:
+        if self.turn == Player.BLACK:
             if any(map(lambda f: self.pawns[f] == LAST_RANK, files)):
                 evaluation_store[self.id()] = LOSE
                 return LOSE
@@ -331,7 +336,7 @@ class Position:
                 return WIN
 
         if nb_valid_moves == 0:
-            assert self.turn == WHITE
+            assert self.turn == Player.WHITE
             evaluation_store[self.id()] = DRAW
             return DRAW
 
@@ -344,34 +349,34 @@ class Position:
 evaluation_store = {}
 
 s = SetUp()
-s.set_turn(WHITE)
+s.set_turn(Player.WHITE)
 s.set_queen((4, 5))
 p = Position(setup=s)
 assert p.evaluate() == LOSE
 
 s = SetUp()
-s.set_turn(BLACK)
+s.set_turn(Player.BLACK)
 s.set_queen((2, 3))
 s.set_pawn((2, 8))
 p = Position(setup=s)
 assert p.evaluate() == LOSE
 
 s = SetUp()
-s.set_turn(WHITE)
+s.set_turn(Player.WHITE)
 s.set_queen((4, 8))
 s.set_pawn((2, 7))
 p = Position(setup=s)
 assert p.evaluate() == WIN
 
 s = SetUp()
-s.set_turn(WHITE)
+s.set_turn(Player.WHITE)
 s.set_queen((2, 8))
 s.set_pawn((2, 7))
 p = Position(setup=s)
 assert p.evaluate() == DRAW
 
 s = SetUp()
-s.set_turn(BLACK)
+s.set_turn(Player.BLACK)
 s.set_queen((2, 8))
 s.set_pawn((2, 6))
 p = Position(setup=s)
@@ -388,12 +393,12 @@ def evaluate(s, file, rank):
     if s.pawns[file] == rank:
         return 'p'
 
-    s.set_turn(BLACK)
+    s.set_turn(Player.BLACK)
     s.set_queen((file, rank))
     assert s.is_valid()
     eval_black_to_play = Position(setup=s).evaluate()
     eval_white_to_play = None
-    s.set_turn(WHITE)
+    s.set_turn(Player.WHITE)
     if s.is_valid():
         eval_white_to_play = Position(setup=s).evaluate()
 
@@ -409,7 +414,7 @@ if __name__ == "__main__":
         print(r, end="")
         for f in files:
             print(' ', end="")
-            print(evaluate(f, r), end="")
+            print(evaluate(s, f, r), end="")
         print()
 
     s = SetUp()
@@ -420,7 +425,7 @@ if __name__ == "__main__":
         print(r, end="")
         for f in files:
             print(' ', end="")
-            print(evaluate(f, r), end="")
+            print(evaluate(s, f, r), end="")
         print()
 
 
