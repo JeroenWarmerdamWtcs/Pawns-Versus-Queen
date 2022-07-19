@@ -377,200 +377,194 @@ s.set_pawn((2, 6))
 p = Position(setup=s)
 assert p.evaluate() == WIN
 
-s = SetUp()
-s.set_pawn((5, 5))
-s.set_pawn((4, 7))
+
+status_char_for_black = {(None, WIN): "+", (None, DRAW): "=", (None, LOSE): "-",
+                         (WIN, WIN): "+", (WIN, DRAW): "D", (WIN, LOSE): "-",
+                         (DRAW, WIN): "B", (DRAW, DRAW): "E", (DRAW, LOSE): "H",
+                         (LOSE, WIN): "w", (LOSE, DRAW): "F", (LOSE, LOSE): "z"}
 
 
-for r in reversed(ranks):
-    print(r, end="")
-    for f in files:
-        print(' ', end="")
-        if s.pawns[f] == r:
-            print('p', end="")
-        else:
-            s.set_turn(BLACK)
-            s.set_queen((f, r))
-            assert s.is_valid()
-            eval_black_to_play = Position(setup=s).evaluate()
-            s.set_turn(WHITE)
-            if not s.is_valid():
-                if eval_black_to_play == WIN:
-                    print('+', end="")
-                elif eval_black_to_play == DRAW:
-                    print('0', end="")
-                else:
-                    print('-', end="")
-            else:
-                eval_white_to_play = Position(setup=s).evaluate()
-                if eval_black_to_play == WIN:
-                    if eval_white_to_play == WIN:
-                        print('+', end="")
-                    elif eval_white_to_play == DRAW:
-                        print('B', end="")
-                    else:
-                        print('w', end="")
-                elif eval_black_to_play == DRAW:
-                    if eval_white_to_play == WIN:
-                        print('D', end="")
-                    elif eval_white_to_play == DRAW:
-                        print('E', end="")
-                    else:
-                        print('F', end="")
-                else:
-                    if eval_white_to_play == WIN:
-                        print('-', end="")
-                    elif eval_white_to_play == DRAW:
-                        print('H', end="")
-                    else:
-                        print('I', end="")
+def evaluate(s, file, rank):
+    if s.pawns[file] == rank:
+        return 'p'
 
-    print()
-    # what if I change something?
-exit()
+    s.set_turn(BLACK)
+    s.set_queen((file, rank))
+    assert s.is_valid()
+    eval_black_to_play = Position(setup=s).evaluate()
+    eval_white_to_play = None
+    s.set_turn(WHITE)
+    if s.is_valid():
+        eval_white_to_play = Position(setup=s).evaluate()
+
+    return status_char_for_black[(eval_white_to_play, eval_black_to_play)]
+
+
+if __name__ == "__main__":
+    s = SetUp()
+    s.set_pawn((4, 5))
+    # s.set_pawn((5, 5))
+
+    for r in reversed(ranks):
+        print(r, end="")
+        for f in files:
+            print(' ', end="")
+            print(evaluate(f, r), end="")
+        print()
+
+    s = SetUp()
+    # s.set_pawn((4, 5))
+    s.set_pawn((5, 5))
+
+    for r in reversed(ranks):
+        print(r, end="")
+        for f in files:
+            print(' ', end="")
+            print(evaluate(f, r), end="")
+        print()
 
 
 
-evaluation_white = {}
-evaluation_black = {}
-
-for q in squares():
-    p = Position(queen=q)
-    code = p.id()
-    evaluation_white[code] = "lose"
-    evaluation_black[code] = "invalid"
-
-assert len(evaluation_white) == len(evaluation_black) == 64
-
-count = 0
-for s in squares():
-    pawn_file, pawn_rank = s
-    if valid_pawn_rank(pawn_rank):
-        for q in squares():
-            if s != q:
-                p = Position(queen=q)
-                p.set_pawn(s)
-                code = p.id()
-                if pawn_rank == 8:
-                    evaluation_white[code] = "invalid"
-                    evaluation_black[code] = "lose"
-                elif p.attacked_by_pawn(q):
-                    evaluation_white[code] = "win"
-                    evaluation_black[code] = "win"
-                else:
-                    evaluation_white[code] = "unknown"
-                    evaluation_black[code] = "unknown"
-
-assert len(evaluation_white) == len(evaluation_black) == 64 + 56 * 63
-
-for code in evaluation_white:
-    if evaluation_white[code] == "unknown":
-        position = Position(code=code)
-        move_found = False
-        all_moves_are_losing = True
-        some_moves_are_winning = False
-        for p in position.generate_next_positions_after_a_pawn_move():
-            move_found = True
-            eval_black_to_play = evaluation_black[p.id()]
-            if eval_black_to_play == "lose":
-                some_moves_are_winning = True
-                break
-            if eval_black_to_play == "unknown":
-                all_moves_are_losing = False
-        if not move_found:
-            evaluation_white[code] = "draw"
-        elif some_moves_are_winning:
-            evaluation_white[code] = "win"
-        elif all_moves_are_losing:
-            evaluation_white[code] = "lose"
-
-
-
-
-
-
-
-exit()
-
-evaluation = {}
-new_work = []
-# evaluation[position] = n means:
-#   with white-to-play in position it can guarantee a win in n moves
-
-# initialisation: evaluation[position] = 1
-
-
-def init_evaluation():
-    for queen_square in product(files, ranks):
-        for pawn_file in files:
-            pawn_square = (pawn_file, LAST_RANK - 1)
-            pawn_square_next = (pawn_file, LAST_RANK)
-            if queen_square not in [pawn_square, pawn_square_next]:
-                position = Position(queen=queen_square)
-                position.set_pawn(pawn_square)
-                if not position.attacked_by_pawn(queen_square):
-                    evaluation[position.id()] = 1
-
-
-def get_evaluation(position):
-    for nb_pawns in range(1, 9):  # 0 pawns will not win
-        for selection in combinations(range(8), nb_pawns):
-            less_pawns = Position(queen=position.queen)
-            valid = True
-            for file in selection:
-                if position.pawns[file] > 0:
-                    less_pawns.set_pawn((file, position.pawns[file]))
-                else:
-                    valid = False
-                    break
-            if valid:
-                result = evaluation.get(less_pawns.id(), None)
-                if result is not None:
-                    return result
-    return None
-
-
-def generate_new_evaluations(position):
-    found = str(position) == "Q: c3 p: c6 d4 f5"
-
-    for prev in position.generate_prev_positions_before_a_queen_move():
-        if found:
-            print("prev", prev)
-        best_nb = 0
-        winning = True
-        for _next in prev.generate_next_positions_after_a_queen_move():
-            _evaluation = get_evaluation(_next)
-            if found:
-                print("_next", _next)
-            if get_evaluation(_next) is None:
-                if found:
-                    print("None")
-                winning = False
-                break
-            best_nb = max(best_nb, _evaluation)
-        if winning:
-            for prev_prev in prev.generate_prev_positions_before_a_pawn_move():
-                if get_evaluation(prev_prev) is None:
-                    prev_prev_id = prev_prev.id()
-                    evaluation[prev_prev_id] = best_nb + 1
-                    new_work.append(prev_prev_id)
-
-
-def main():
-    global new_work
-    init_evaluation()
-    assert len(evaluation) == 482
-    new_work = list(evaluation.keys())
-    while new_work:
-        print(len(new_work))
-        input("press enter to continue")
-        work = new_work
-        new_work = []
-        for p in work:
-            generate_new_evaluations(Position(code=p))
-        for p in new_work:
-            position = Position(code=p)
-            print(evaluation[p], position)
-
-
-main()
+# evaluation_white = {}
+# evaluation_black = {}
+#
+# for q in squares():
+#     p = Position(queen=q)
+#     code = p.id()
+#     evaluation_white[code] = "lose"
+#     evaluation_black[code] = "invalid"
+#
+# assert len(evaluation_white) == len(evaluation_black) == 64
+#
+# count = 0
+# for s in squares():
+#     pawn_file, pawn_rank = s
+#     if valid_pawn_rank(pawn_rank):
+#         for q in squares():
+#             if s != q:
+#                 p = Position(queen=q)
+#                 p.set_pawn(s)
+#                 code = p.id()
+#                 if pawn_rank == 8:
+#                     evaluation_white[code] = "invalid"
+#                     evaluation_black[code] = "lose"
+#                 elif p.attacked_by_pawn(q):
+#                     evaluation_white[code] = "win"
+#                     evaluation_black[code] = "win"
+#                 else:
+#                     evaluation_white[code] = "unknown"
+#                     evaluation_black[code] = "unknown"
+#
+# assert len(evaluation_white) == len(evaluation_black) == 64 + 56 * 63
+#
+# for code in evaluation_white:
+#     if evaluation_white[code] == "unknown":
+#         position = Position(code=code)
+#         move_found = False
+#         all_moves_are_losing = True
+#         some_moves_are_winning = False
+#         for p in position.generate_next_positions_after_a_pawn_move():
+#             move_found = True
+#             eval_black_to_play = evaluation_black[p.id()]
+#             if eval_black_to_play == "lose":
+#                 some_moves_are_winning = True
+#                 break
+#             if eval_black_to_play == "unknown":
+#                 all_moves_are_losing = False
+#         if not move_found:
+#             evaluation_white[code] = "draw"
+#         elif some_moves_are_winning:
+#             evaluation_white[code] = "win"
+#         elif all_moves_are_losing:
+#             evaluation_white[code] = "lose"
+#
+#
+#
+#
+#
+#
+#
+# exit()
+#
+# evaluation = {}
+# new_work = []
+# # evaluation[position] = n means:
+# #   with white-to-play in position it can guarantee a win in n moves
+#
+# # initialisation: evaluation[position] = 1
+#
+#
+# def init_evaluation():
+#     for queen_square in product(files, ranks):
+#         for pawn_file in files:
+#             pawn_square = (pawn_file, LAST_RANK - 1)
+#             pawn_square_next = (pawn_file, LAST_RANK)
+#             if queen_square not in [pawn_square, pawn_square_next]:
+#                 position = Position(queen=queen_square)
+#                 position.set_pawn(pawn_square)
+#                 if not position.attacked_by_pawn(queen_square):
+#                     evaluation[position.id()] = 1
+#
+#
+# def get_evaluation(position):
+#     for nb_pawns in range(1, 9):  # 0 pawns will not win
+#         for selection in combinations(range(8), nb_pawns):
+#             less_pawns = Position(queen=position.queen)
+#             valid = True
+#             for file in selection:
+#                 if position.pawns[file] > 0:
+#                     less_pawns.set_pawn((file, position.pawns[file]))
+#                 else:
+#                     valid = False
+#                     break
+#             if valid:
+#                 result = evaluation.get(less_pawns.id(), None)
+#                 if result is not None:
+#                     return result
+#     return None
+#
+#
+# def generate_new_evaluations(position):
+#     found = str(position) == "Q: c3 p: c6 d4 f5"
+#
+#     for prev in position.generate_prev_positions_before_a_queen_move():
+#         if found:
+#             print("prev", prev)
+#         best_nb = 0
+#         winning = True
+#         for _next in prev.generate_next_positions_after_a_queen_move():
+#             _evaluation = get_evaluation(_next)
+#             if found:
+#                 print("_next", _next)
+#             if get_evaluation(_next) is None:
+#                 if found:
+#                     print("None")
+#                 winning = False
+#                 break
+#             best_nb = max(best_nb, _evaluation)
+#         if winning:
+#             for prev_prev in prev.generate_prev_positions_before_a_pawn_move():
+#                 if get_evaluation(prev_prev) is None:
+#                     prev_prev_id = prev_prev.id()
+#                     evaluation[prev_prev_id] = best_nb + 1
+#                     new_work.append(prev_prev_id)
+#
+#
+# def main():
+#     global new_work
+#     init_evaluation()
+#     assert len(evaluation) == 482
+#     new_work = list(evaluation.keys())
+#     while new_work:
+#         print(len(new_work))
+#         input("press enter to continue")
+#         work = new_work
+#         new_work = []
+#         for p in work:
+#             generate_new_evaluations(Position(code=p))
+#         for p in new_work:
+#             position = Position(code=p)
+#             print(evaluation[p], position)
+#
+#
+# main()
