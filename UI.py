@@ -19,10 +19,10 @@ pawn_image = tk.PhotoImage(file=r"C:\Users\jhawa\Documents\Jeroen\Diverse Code\P
 def eval():
     for qr in ranks:
         for qf in files:
-            s = main.SetUp()
+            mp = main.Pawns()
             for pf in pawns:
-                s.set_pawn((pf, pawns[pf]))
-            e = main.evaluate(s, qf, qr)
+                mp.set(main.Square(pf, pawns[pf]))
+            e = main.evaluate(mp, main.Square(qf, qr))
             sq[(qf, qr)]._btn.config(text=e)
 
 

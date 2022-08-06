@@ -1,5 +1,7 @@
-from itertools import combinations, product
-from enum import Enum
+from itertools import product
+from enum import IntEnum
+from copy import deepcopy
+from operator import countOf
 
 # This is a Python script for solving the game "queen vs pawns":
 # The game start with the white pawns and the black queen
@@ -24,7 +26,7 @@ from enum import Enum
 
 #       - The queen might go to the squares ys and yt.
 #       - So these squares are under attack by one pawn in the file of the queen (x)
-#       - and one pawn on the other side of the pawn. Let us call that file z
+#         and one pawn on the other side of the pawn. Let us call that file z
 
 #               t    Q . .             t    . . Q
 #               s    . . .      or     s    . . .
@@ -37,11 +39,12 @@ from enum import Enum
 #       - Those squares cannot be attacked from the y file, as the pawn in the y file does not
 #         attack these squares
 #
-#       - So we must have two attacking squares in other file next to x. Contradiction.
+#       - So we must have two attacking squares in other file next to z. Contradiction.
+
 
 #       So positions have
 #       - at most one pawn in each file, ranks between 2 and 8
-#       - one queen, not on same square as a pawn
+#       - one queen, not on the same square as a pawn
 #       - when white-to-play
 #         - no queen on an attacked square
 #         - no pawn on rank 8
@@ -90,9 +93,15 @@ from enum import Enum
 #
 #               Store this position is win in n+1 unless it is stored already
 
+#   consider [1] a pawn on a6 and a queen on f1. White to play wins in 2 moves.
+#   now consider [2] a pawn on a5 and a queen on g2, pawns on g3, f3 and e2. White to play wins in 3 moves,
+#   as the queen is blocked to all good squares.
+#   From [1] we can do the reverse move Qf1g2. Now we need to add all these pawns
+#   to make it winning for the pawns.
+
+
 # ######################## POSITIONS ##########################
 
-NOT_ON_BOARD = -1
 FIRST_FILE = 1
 LAST_FILE = 8
 FIRST_RANK = 1
@@ -101,129 +110,120 @@ files = range(FIRST_FILE, LAST_FILE + 1)
 ranks = range(FIRST_RANK, LAST_RANK + 1)
 
 
-class Player(Enum):
+class Player(IntEnum):
     WHITE = 1
     BLACK = -1
 
 
-WIN = 1
-DRAW = 0
-LOSE = -1
-UNKNOWN = None
+class Status(IntEnum):
+    WIN = 1
+    DRAW = 0
+    LOSE = -1
 
 
-def squares():
-    for f in files:
-        for r in ranks:
-            yield f, r
+class Square:
+    def __init__(self, file, rank):
+        self.__file = file
+        self.__rank = rank
+
+    def __str__(self):
+        if self.is_on_board():
+            # noinspection SpellCheckingInspection
+            return "_abcdefgh"[self.file] + str(self.rank)
+        else:
+            return "??"
+
+    def is_on_board(self):
+        return 1 <= self.file <= 8 and 1 <= self.rank <= 8  # faster than file in files and rank in ranks
+
+    def move(self, direction):
+        delta_file, delta_rank = direction
+        self.__file += delta_file
+        self.__rank += delta_rank
+
+    @property
+    def file(self):
+        return self.__file
+
+    @property
+    def rank(self):
+        return self.__rank
 
 
-def on_board(square):
-    file, rank = square
-    return FIRST_FILE <= file <= LAST_FILE and FIRST_RANK <= rank <= LAST_RANK
+def generate_all_valid_squares_a8_b8___h1():
+    for rank in reversed(ranks):
+        for file in files:
+            yield Square(file, rank)
 
 
-def square_to_string(square):
-    if not on_board(square):
-        return "invalid"
-    file, rank = square
-    # noinspection SpellCheckingInspection
-    return "_abcdefgh"[file] + str(rank)
+class Pawns:
+    def __init__(self):
+        self.__pawns = {}  # __pawns[file] = rank means there is a pawn on square (file, rank)
 
+    def __str__(self):
+        return " ".join(map(str, self.get_squares()))
 
-def valid_pawn_rank(rank):
-    return FIRST_RANK < rank <= LAST_RANK
+    def set(self, square):
+        assert square.is_on_board()
+        assert square.rank > 1
+        self.__pawns[square.file] = square.rank  # this will automatically remove any other pawns in this file
+
+    def empty_file(self, file):
+        self.__pawns.pop(file, None)
+
+    def empty_square(self, square):
+        if self.occupy(square):
+            self.empty_file(square.file)
+
+    def count(self):
+        return len(self.__pawns)
+
+    def get_squares(self):
+        for file in self.__pawns:
+            yield Square(file, self.__pawns[file])
+
+    def get_highest_rank(self):
+        return max(self.__pawns.values(), default=0)
+
+    def get_nb_promoted(self):
+        return countOf(self.__pawns.values(), 8)
+
+    def occupy(self, square):
+        return self.__pawns.get(square.file, None) == square.rank
+
+    def attack(self, square):
+        if not square.is_on_board:
+            return False  # we don't want 1,8 to attack 2,9 etc.
+        return (self.occupy(Square(square.file - 1, square.rank - 1)) or
+                self.occupy(Square(square.file + 1, square.rank - 1)))
+
+    def pawn_in_file(self, file):
+        return Square(file, self.__pawns[file]) if file in self.__pawns else None
 
 
 # ######################## QUEEN MOVES ##########################
+
 
 DIRECTIONS = list(product([-1, 0, 1], [-1, 0, 1]))
 DIRECTIONS.remove((0, 0))
 
 
-def move(queen_square, direction):
-    return queen_square[0] + direction[0], queen_square[1] + direction[1]
-
-
-class SetUp:
-    def __init__(self):
-        self.turn = Player.WHITE
-        self.queen = (FIRST_FILE, FIRST_RANK)
-        self.pawns = [0] + [NOT_ON_BOARD] * 8  # we will not use self.pawns[0]
-
-    def set_turn(self, turn):
-        assert isinstance(turn, Player)
-        assert turn in [Player.WHITE, Player.BLACK]
-        self.turn = turn
-
-    def set_pawn(self, square):
-        file, rank = square
-        assert valid_pawn_rank(rank)
-        self.pawns[file] = rank
-
-    def remove_pawn(self, file):
-        self.pawns[file] = NOT_ON_BOARD
-
-    def set_queen(self, square):
-        self.queen = square
+class Position:
+    def __init__(self, pawns, queen):
+        self.pawns = deepcopy(pawns)
+        self.queen = queen
 
     def is_valid(self):
-        if self.occupied_by_pawn(self.queen):
-            return False
+        return not self.pawns.occupy(self.queen)
 
-        nb_pawns = len(list(filter(lambda f: self.pawns[f] != NOT_ON_BOARD, self.pawns)))
-        nb_pawns_on_last_rank = len(list(filter(lambda f: self.pawns[f] == LAST_FILE, self.pawns)))
-
-        if self.turn == Player.WHITE:
-            return nb_pawns > 0 and nb_pawns_on_last_rank == 0 and not self.attacked_by_pawn(self.queen)
-
-        if self.turn == Player.BLACK:
-            return nb_pawns_on_last_rank <= 1
-
-    def occupied_by_pawn(self, square):
-        file, rank = square
-        return on_board(square) and valid_pawn_rank(rank) and self.pawns[file] == rank
-
-    def attacked_by_pawn(self, square):
-        file, rank = square
-        return self.occupied_by_pawn((file - 1, rank - 1)) or self.occupied_by_pawn((file + 1, rank - 1))
-
-
-class Position:
-    def __init__(self, *, setup=None, code=None):
-        if setup:
-            assert not code
-            assert setup.is_valid()
-            self.turn = setup.turn
-            self.queen = setup.queen
-            self.pawns = setup.pawns.copy()
-            return
-        if code:
-            assert not setup
-            turn, queen, pawns = code
-            self.turn = turn
-            self.pawns = [0] + pawns
-            self.queen = queen
-            return
-        assert False
-
-    def __repr__(self):
-        result = f"Q: {square_to_string(self.queen)} "
-        result += f"p:"
-        for f in files:
-            if self.pawns[f] != NOT_ON_BOARD:
-                result += " " + square_to_string((f, self.pawns[f]))
-        return result
-
-    def __str__(self):
-        return self.__repr__()
+    def get_board_as_string(self):
         result = ""
         for r in reversed(ranks):
             result += str(r)
             for f in files:
                 if (f, r) == self.queen:
                     result += " Q"
-                elif self.pawns[f] == r:
+                elif self.pawns.occupy(Square(f, r)):
                     result += " p"
                 else:
                     result += " ."
@@ -231,204 +231,325 @@ class Position:
         result += "  a b c d e f g h\n"
         return result
 
-    def id(self):
-        return self.turn, self.queen, tuple(self.pawns[FIRST_FILE:(LAST_FILE + 1)])
-
-    def get_pawns(self):
-        for f in files:
-            if self.pawns[f] != NOT_ON_BOARD:
-                yield f, self.pawns[f]
-
-    def get_copy(self):
-        setup = SetUp()
-        setup.set_turn(self.turn)
-        for p in self.get_pawns():
-            setup.set_pawn(p)
-        setup.set_queen(self.queen)
-        copy = Position(setup=setup)
-        return copy
+    def is_lost_by_definition(self):
+        assert False, f"abstract method called on {self}"
 
     def generate_next_positions(self):
-        if self.turn == Player.WHITE:
-            for file in files:
-                rank = self.pawns[file]
-                if 2 <= rank < LAST_RANK and (file, rank + 1) != self.queen:
-                    position = self.get_copy()
-                    position.turn = Player.BLACK
-                    position.move_pawn_forward(file)
-                    yield position
-                    if rank == 2 and (file, 4) != self.queen:
-                        position = self.get_copy()
-                        position.turn = Player.BLACK
-                        position.move_pawn_forward_twice(file)
-                        yield position
-
-        if self.turn == Player.BLACK:
-            for d in DIRECTIONS:
-                new_queen = move(self.queen, d)
-                while on_board(new_queen):
-                    if not self.attacked_by_pawn(new_queen):
-                        position = self.get_copy()
-                        position.turn = Player.WHITE
-                        position.move_queen(new_queen)
-                        yield position
-                    if self.occupied_by_pawn(new_queen):
-                        break
-                    new_queen = move(new_queen, d)
-
-    def occupied_by_pawn(self, square):
-        file, rank = square
-        return on_board(square) and valid_pawn_rank(rank) and self.pawns[file] == rank
-
-    def attacked_by_pawn(self, square):
-        file, rank = square
-        return self.occupied_by_pawn((file - 1, rank - 1)) or self.occupied_by_pawn((file + 1, rank - 1))
-
-    def set_pawn(self, square):
-        assert self.queen != square
-        file, rank = square
-        assert self.pawns[file] == NOT_ON_BOARD
-        assert valid_pawn_rank(rank)
-        self.pawns[file] = rank
-
-    def remove_pawn(self, file):
-        assert valid_pawn_rank(self.pawns[file])
-        self.pawns[file] = NOT_ON_BOARD
-
-    def move_pawn_forward(self, file):
-        rank = self.pawns[file]
-        self.remove_pawn(file)
-        self.set_pawn((file, rank + 1))
-
-    def move_pawn_forward_twice(self, file):
-        assert self.pawns[file] == 2
-        self.move_pawn_forward(file)
-        self.move_pawn_forward(file)
-
-    def move_queen(self, square):
-        if self.occupied_by_pawn(square):
-            file, rank = square
-            self.remove_pawn(file)
-        self.queen = square
+        assert False, f"abstract method called on {self}"
+        # noinspection PyUnreachableCode
+        return []
 
     def evaluate(self):
-        result = evaluation_store.get(self.id(), None)
-        if result:
+        result = evaluation_store[self]
+        if result is not None:
             return result
 
-        if self.turn == Player.WHITE:
-            if all(map(lambda f: self.pawns[f] == NOT_ON_BOARD, files)):
-                evaluation_store[self.id()] = LOSE
-                return LOSE
+        if self.is_lost_by_definition():
+            evaluation_store.save(self, Status.LOSE)
+            return Status.LOSE
 
-        if self.turn == Player.BLACK:
-            if any(map(lambda f: self.pawns[f] == LAST_RANK, files)):
-                evaluation_store[self.id()] = LOSE
-                return LOSE
-
-        best = LOSE
-        nb_valid_moves = 0
+        best = Status.LOSE
+        stalemate = True
         for next_pos in self.generate_next_positions():
-            nb_valid_moves += 1
-            best = max(best, next_pos.evaluate() * -1)
-            if best == WIN:
-                evaluation_store[self.id()] = WIN
-                return WIN
+            stalemate = False
+            new_eval = next_pos.evaluate()
+            if new_eval == Status.LOSE:
+                evaluation_store.save(self, Status.WIN)
+                return Status.WIN
+            if new_eval == Status.DRAW:
+                best = Status.DRAW
 
-        if nb_valid_moves == 0:
-            assert self.turn == Player.WHITE
-            evaluation_store[self.id()] = DRAW
-            return DRAW
+        if stalemate:
+            assert isinstance(self, PosWhite)
+            evaluation_store.save(self, Status.DRAW)
+            return Status.DRAW
 
-        evaluation_store[self.id()] = best
+        evaluation_store.save(self, best)
         return best
 
 
 # ######################## EVALUATION ##########################
 
-evaluation_store = {}
+class PosWhite(Position):
+    def is_valid(self):
+        return (super().is_valid() and
+                self.pawns.get_nb_promoted() == 0 and
+                not self.pawns.attack(self.queen))
 
-s = SetUp()
-s.set_turn(Player.WHITE)
-s.set_queen((4, 5))
-p = Position(setup=s)
-assert p.evaluate() == LOSE
+    def is_lost_by_definition(self):
+        return self.pawns.count() == 0
 
-s = SetUp()
-s.set_turn(Player.BLACK)
-s.set_queen((2, 3))
-s.set_pawn((2, 8))
-p = Position(setup=s)
-assert p.evaluate() == LOSE
+    def __repr__(self):
+        return f"{self.pawns} Q{self.queen}"
 
-s = SetUp()
-s.set_turn(Player.WHITE)
-s.set_queen((4, 8))
-s.set_pawn((2, 7))
-p = Position(setup=s)
-assert p.evaluate() == WIN
+    def __str__(self):
+        return self.__repr__()
 
-s = SetUp()
-s.set_turn(Player.WHITE)
-s.set_queen((2, 8))
-s.set_pawn((2, 7))
-p = Position(setup=s)
-assert p.evaluate() == DRAW
+    def get_position_after_move_pawn_forward(self, square, twice=False):
+        pawns = deepcopy(self.pawns)
+        up = (0, 1)
+        square.move(up)
+        if twice:
+            square.move(up)
+        pawns.set(square)
+        return PosBlack(pawns, self.queen)
 
-s = SetUp()
-s.set_turn(Player.BLACK)
-s.set_queen((2, 8))
-s.set_pawn((2, 6))
-p = Position(setup=s)
-assert p.evaluate() == WIN
+    def generate_next_positions(self):
+        for pawn in self.pawns.get_squares():
+            if pawn.rank < LAST_RANK and (pawn.file, pawn.rank + 1) != (self.queen.file, self.queen.rank):
+                yield self.get_position_after_move_pawn_forward(pawn)
+                if pawn.rank == 2 and (pawn.file, 4) != (self.queen.file, self.queen.rank):
+                    yield self.get_position_after_move_pawn_forward(pawn, twice=True)
 
 
-status_char_for_black = {(None, WIN): "+", (None, DRAW): "=", (None, LOSE): "-",
-                         (WIN, WIN): "+", (WIN, DRAW): "D", (WIN, LOSE): "-",
-                         (DRAW, WIN): "B", (DRAW, DRAW): "E", (DRAW, LOSE): "H",
-                         (LOSE, WIN): "w", (LOSE, DRAW): "F", (LOSE, LOSE): "z"}
+class PosBlack(Position):
+    def is_valid(self):
+        return (super().is_valid() and
+                self.pawns.count() >= 1 and
+                self.pawns.get_nb_promoted() <= 1)
+
+    def is_lost_by_definition(self):
+        return self.pawns.get_nb_promoted() > 0
+
+    def __repr__(self):
+        return f"Q{self.queen} {self.pawns}"
+
+    def __str__(self):
+        return self.__repr__()
+
+    def get_position_after_move_queen(self, destination):
+        pawns = deepcopy(self.pawns)
+        pawns.empty_square(destination)
+        return PosWhite(pawns, destination)
+
+    def generate_next_positions(self):
+        for d in DIRECTIONS:
+            new_queen = deepcopy(self.queen)
+            new_queen.move(d)
+            while new_queen.is_on_board():
+                if not self.pawns.attack(new_queen):
+                    yield self.get_position_after_move_queen(new_queen)
+                if self.pawns.occupy(new_queen):
+                    break
+                new_queen.move(d)
 
 
-def evaluate(s, file, rank):
-    if s.pawns[file] == rank:
+class EvaluationStore:
+    def __init__(self):
+        self.store = [{} for _ in range(9)]  # i.e. store[n] contains positions with n pawns
+
+    def save(self, position, evaluation):
+        assert isinstance(position, Position)
+        assert isinstance(evaluation, Status)
+        n = position.pawns.count()
+        code = self.position_to_code(position)
+        assert code not in self.store[n], f"position already in store: {position}"
+        self.store[n][code] = evaluation
+
+    def __getitem__(self, position):
+        assert isinstance(position, Position)
+        assert isinstance(position.pawns, Pawns)
+        n = position.pawns.count()
+        code = self.position_to_code(position)
+        return self.store[n].get(code, None)
+
+    def print_stats(self):
+        print("Number: ", sum([len(x) for x in self.store]))
+        for n in range(9):
+            if len(self.store[n]) > 0:
+                print("  ", n, ": ", len(self.store[n]))
+
+    @staticmethod
+    def position_to_code(position):
+        turn = Player.WHITE if isinstance(position, PosWhite) else Player.BLACK
+        result = [turn, position.queen.file, position.queen.rank]
+        for f in files:
+            pawn = position.pawns.pawn_in_file(f)
+            if pawn is None:
+                result += [f, -1]
+            else:
+                result += [f, pawn.rank]
+        return tuple(result)
+
+
+evaluation_store = EvaluationStore()
+
+
+def unit_test():
+    pawns = Pawns()
+    queen = Square(4, 5)
+    p = PosWhite(pawns, queen)
+    assert p.evaluate() == Status.LOSE
+
+    pawns = Pawns()
+    pawns.set(Square(2, 8))
+    queen = Square(2, 3)
+    p = PosBlack(pawns, queen)
+    assert p.evaluate() == Status.LOSE
+
+    pawns = Pawns()
+    pawns.set(Square(2, 7))
+    queen = Square(4, 8)
+    p = PosWhite(pawns, queen)
+    assert p.evaluate() == Status.WIN
+
+    pawns = Pawns()
+    pawns.set(Square(2, 7))
+    queen = Square(2, 8)
+    p = PosWhite(pawns, queen)
+    assert p.evaluate() == Status.DRAW
+
+    pawns = Pawns()
+    pawns.set(Square(2, 6))
+    queen = Square(2, 8)
+    p = PosBlack(pawns, queen)
+    assert p.evaluate() == Status.WIN
+    p.evaluate()
+
+
+status_char_for_black = {
+    (None, Status.WIN): "+", (None, Status.DRAW): "=", (None, Status.LOSE): "-",
+    (Status.WIN, Status.WIN): "+", (Status.WIN, Status.DRAW): "D", (Status.WIN, Status.LOSE): "-",
+    (Status.DRAW, Status.WIN): "B", (Status.DRAW, Status.DRAW): "E", (Status.DRAW, Status.LOSE): "H",
+    (Status.LOSE, Status.WIN): "w", (Status.LOSE, Status.DRAW): "F", (Status.LOSE, Status.LOSE): "z"}
+
+
+def evaluate(pawns, queen):
+    if pawns.occupy(queen):
         return 'p'
 
-    s.set_turn(Player.BLACK)
-    s.set_queen((file, rank))
-    assert s.is_valid()
-    eval_black_to_play = Position(setup=s).evaluate()
+    eval_black_to_play = PosBlack(pawns, queen).evaluate()
     eval_white_to_play = None
-    s.set_turn(Player.WHITE)
-    if s.is_valid():
-        eval_white_to_play = Position(setup=s).evaluate()
+    p = PosWhite(pawns, queen)
+    if p.is_valid():
+        eval_white_to_play = p.evaluate()
 
     return status_char_for_black[(eval_white_to_play, eval_black_to_play)]
 
 
+evaluation_store = EvaluationStore()
+
+
+# def print_stats():
+#     stat = {}
+#     for code in evaluation_store:
+#         p = Position(code=code)
+#         t = p.turn
+#         nb = p.get_nb_pawns()
+#         if nb not in stat:
+#             stat[nb] = {Player.WHITE: {}, Player.BLACK: {}}
+#         d = stat[nb][t]
+#         ev = evaluation_store[code]
+#         d[ev] = d.get(ev, 0) + 1
+#
+#     for nb in stat:
+#         print(nb, "w", end=" ")
+#         for key in stat[nb][Player.WHITE]:
+#             print(key.name, stat[nb][Player.WHITE][key], end=" ")
+#         print()
+#         print(nb, "b", end=" ")
+#         for key in stat[nb][Player.BLACK]:
+#             print(key.name, stat[nb][Player.BLACK][key], end=" ")
+#         print()
+
+
+def generate_and_evaluate_all_positions_without_pawns():
+    for queen in generate_all_valid_squares_a8_b8___h1():
+        assert PosWhite(Pawns(), queen).evaluate() == Status.LOSE
+
+
+def generate_and_evaluate_all_positions_with_one_pawn():
+    for pawn in generate_all_valid_squares_a8_b8___h1():
+        if pawn.rank > 1:
+            pawns = Pawns()
+            pawns.set(pawn)
+            for queen in generate_all_valid_squares_a8_b8___h1():
+                p = PosWhite(pawns, queen)
+                if p.is_valid():
+                    p.evaluate()
+                p = PosBlack(pawns, queen)
+                if p.is_valid():
+                    p.evaluate()
+
+
+def generate_and_evaluate_all_positions_with_two_pawns():
+    for pawn1 in generate_all_valid_squares_a8_b8___h1():
+        for pawn2 in generate_all_valid_squares_a8_b8___h1():
+            if pawn1.rank > 1 and pawn2.rank > 1 and pawn1.file < pawn2.file:
+                pawns = Pawns()
+                pawns.set(pawn1)
+                pawns.set(pawn2)
+                for queen in generate_all_valid_squares_a8_b8___h1():
+                    p = PosWhite(pawns, queen)
+                    if p.is_valid():
+                        p.evaluate()
+                    p = PosBlack(pawns, queen)
+                    if p.is_valid():
+                        p.evaluate()
+
+
+def generate_and_evaluate_all_positions_with_three_pawns():
+    for pawn1 in generate_all_valid_squares_a8_b8___h1():
+        for pawn2 in generate_all_valid_squares_a8_b8___h1():
+            for pawn3 in generate_all_valid_squares_a8_b8___h1():
+                if (pawn1.rank > 1 and pawn2.rank > 1 and pawn3.rank > 1 and
+                        pawn1.file < pawn2.file < pawn3.file):
+                    pawns = Pawns()
+                    pawns.set(pawn1)
+                    pawns.set(pawn2)
+                    pawns.set(pawn3)
+                    for queen in generate_all_valid_squares_a8_b8___h1():
+                        p = PosWhite(pawns, queen)
+                        if p.is_valid():
+                            p.evaluate()
+                        p = PosBlack(pawns, queen)
+                        if p.is_valid():
+                            p.evaluate()
+
+
+def generate_and_evaluate_all_positions_with(nb_pawns):
+    pass
+
+
+def generate_and_evaluate():
+    generate_and_evaluate_all_positions_without_pawns()
+    assert len(evaluation_store.store[0]) == 64
+    generate_and_evaluate_all_positions_with_one_pawn()
+    # white to play:
+    #  6 + 6 rook pawns each with 62 queen positions
+    #  6 * 6 other pawns each with 61 queen positions
+    # so 2 * 6 * 62 + 6 * 6 * 61
+    # black to play:
+    #  8 * 7 pawn positions and 63 queen position
+    # no pawns: 64
+    print(len(evaluation_store.store[1]))
+    print(2 * 6 * 62 + 6 * 6 * 61 + 8 * 7 * 63)
+    assert len(evaluation_store.store[1]) == 2 * 6 * 62 + 6 * 6 * 61 + 8 * 7 * 63
+    evaluation_store.print_stats()
+    generate_and_evaluate_all_positions_with_two_pawns()
+    evaluation_store.print_stats()
+    generate_and_evaluate_all_positions_with_three_pawns()
+    evaluation_store.print_stats()
+
+
+def do_example():
+    pawns = Pawns()
+    pawns.set(Square(4, 5))
+    # pawns.set(Square((5, 5))
+
+    for r in reversed(ranks):
+        print(r, end="")
+        for f in files:
+            print(' ', end="")
+            queen = Square(f, r)
+            print(evaluate(pawns, queen), end="")
+        print()
+
+
 if __name__ == "__main__":
-    s = SetUp()
-    s.set_pawn((4, 5))
-    # s.set_pawn((5, 5))
-
-    for r in reversed(ranks):
-        print(r, end="")
-        for f in files:
-            print(' ', end="")
-            print(evaluate(s, f, r), end="")
-        print()
-
-    s = SetUp()
-    # s.set_pawn((4, 5))
-    s.set_pawn((5, 5))
-
-    for r in reversed(ranks):
-        print(r, end="")
-        for f in files:
-            print(' ', end="")
-            print(evaluate(s, f, r), end="")
-        print()
-
-
+    unit_test()
+    generate_and_evaluate()
+    do_example()
 
 # evaluation_white = {}
 # evaluation_black = {}
