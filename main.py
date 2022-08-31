@@ -1,7 +1,6 @@
 from itertools import product
 from enum import IntEnum
 from copy import deepcopy
-from operator import countOf
 
 # This is a Python script for solving the game "queen vs pawns":
 # The game start with the white pawns and the black queen
@@ -102,12 +101,8 @@ from operator import countOf
 
 # ######################## POSITIONS ##########################
 
-FIRST_FILE = 1
-LAST_FILE = 8
-FIRST_RANK = 1
-LAST_RANK = 8
-files = range(FIRST_FILE, LAST_FILE + 1)
-ranks = range(FIRST_RANK, LAST_RANK + 1)
+files = range(1, 8 + 1)
+ranks = range(1, 8 + 1)
 
 
 class Player(IntEnum):
@@ -123,31 +118,32 @@ class Status(IntEnum):
 
 class Square:
     def __init__(self, file, rank):
+        assert 1 <= file <= 8
+        assert 1 <= rank <= 8
         self.__file = file
         self.__rank = rank
 
     def __str__(self):
-        if self.is_on_board():
-            # noinspection SpellCheckingInspection
-            return "_abcdefgh"[self.file] + str(self.rank)
-        else:
-            return "??"
-
-    def is_on_board(self):
-        return 1 <= self.file <= 8 and 1 <= self.rank <= 8  # faster than file in files and rank in ranks
-
-    def move(self, direction):
-        delta_file, delta_rank = direction
-        self.__file += delta_file
-        self.__rank += delta_rank
+        # noinspection SpellCheckingInspection
+        return "_abcdefgh"[self.file] + str(self.rank)
 
     @property
     def file(self):
         return self.__file
 
-    @property
-    def rank(self):
+    @file.setter
+    def file(self, value):
+        assert 1 <= value <= 8
+        self.__file = value
+
+    def _get_rank(self):
         return self.__rank
+
+    def _set_rank(self, value):
+        assert 1 <= value <= 8, value
+        self.__rank = value
+
+    rank = property(_get_rank, _set_rank)
 
 
 def generate_all_valid_squares_a8_b8___h1():
@@ -156,17 +152,56 @@ def generate_all_valid_squares_a8_b8___h1():
             yield Square(file, rank)
 
 
+class Pawn(Square):
+    def __init__(self, file, rank):
+        assert rank > 1
+        super().__init__(file, rank)
+
+    def _set_rank(self, value):
+        assert value != 1
+        super()._set_rank(value)
+
+    def is_promoted(self):
+        return self.rank == 8
+
+    def is_blocked(self, square):
+        return self.file == square.file and self.rank + 1 == square.rank
+
+    def attacks(self, square):
+        return abs(self.file - square.file) == 1 and self.rank + 1 == square.rank
+
+    def move(self):
+        assert self.rank < 8
+        self.rank += 1
+
+
+class Queen(Square):
+    DIRECTIONS = list(product([-1, 0, 1], [-1, 0, 1]))
+    DIRECTIONS.remove((0, 0))
+
+    def move(self, direction, nb_steps=1):
+        delta_file, delta_rank = direction
+        new_file = self.file + nb_steps * delta_file
+        new_rank = self.rank + nb_steps * delta_rank
+        if 1 <= new_file <= 8 and 1 <= new_rank <= 8:
+            self.file = new_file
+            self.rank = new_rank
+            return True
+        else:
+            return False
+
+
 class Pawns:
-    def __init__(self):
-        self.__pawns = {}  # __pawns[file] = rank means there is a pawn on square (file, rank)
+    def __init__(self, *pawns):
+        self.__pawns = {}  # __pawns[file] == None or __pawns[file].file == file
+        for pawn in pawns:
+            self.set(pawn)
 
     def __str__(self):
-        return " ".join(map(str, self.get_squares()))
+        return " ".join(map(str, self.pawns))
 
-    def set(self, square):
-        assert square.is_on_board()
-        assert square.rank > 1
-        self.__pawns[square.file] = square.rank  # this will automatically remove any other pawns in this file
+    def set(self, pawn):
+        self.__pawns[pawn.file] = pawn  # this will automatically remove any other pawns in this file
 
     def empty_file(self, file):
         self.__pawns.pop(file, None)
@@ -178,34 +213,37 @@ class Pawns:
     def count(self):
         return len(self.__pawns)
 
-    def get_squares(self):
-        for file in self.__pawns:
-            yield Square(file, self.__pawns[file])
+    @property
+    def pawns(self):
+        return self.__pawns.values()
 
     def get_highest_rank(self):
-        return max(self.__pawns.values(), default=0)
+        return max([pawn.file for pawn in self.pawns], default=0)
 
     def get_nb_promoted(self):
-        return countOf(self.__pawns.values(), 8)
+        return sum([pawn.is_promoted() for pawn in self.pawns])
 
     def occupy(self, square):
-        return self.__pawns.get(square.file, None) == square.rank
+        if square.file in self.__pawns:
+            return self.__pawns[square.file].rank == square.rank
+        else:
+            return False
 
     def attack(self, square):
-        if not square.is_on_board:
-            return False  # we don't want 1,8 to attack 2,9 etc.
-        return (self.occupy(Square(square.file - 1, square.rank - 1)) or
-                self.occupy(Square(square.file + 1, square.rank - 1)))
+        if square.rank == 1:
+            return False
+        if square.file < 8:
+            if self.occupy(Square(square.file + 1, square.rank - 1)):
+                return True
+        if square.file > 1:
+            if self.occupy(Square(square.file - 1, square.rank - 1)):
+                return True
 
     def pawn_in_file(self, file):
-        return Square(file, self.__pawns[file]) if file in self.__pawns else None
+        return self.__pawns.get(file, None)
 
 
 # ######################## QUEEN MOVES ##########################
-
-
-DIRECTIONS = list(product([-1, 0, 1], [-1, 0, 1]))
-DIRECTIONS.remove((0, 0))
 
 
 class Position:
@@ -230,6 +268,9 @@ class Position:
             result += "\n"
         result += "  a b c d e f g h\n"
         return result
+
+    def player(self):
+        assert False, f"abstract method called on {self}"
 
     def is_lost_by_definition(self):
         assert False, f"abstract method called on {self}"
@@ -260,7 +301,7 @@ class Position:
                 best = Status.DRAW
 
         if stalemate:
-            assert isinstance(self, PosWhite)
+            assert self.player() == Player.WHITE
             evaluation_store.save(self, Status.DRAW)
             return Status.DRAW
 
@@ -271,6 +312,9 @@ class Position:
 # ######################## EVALUATION ##########################
 
 class PosWhite(Position):
+    def player(self):
+        return Player.WHITE
+
     def is_valid(self):
         return (super().is_valid() and
                 self.pawns.get_nb_promoted() == 0 and
@@ -285,24 +329,26 @@ class PosWhite(Position):
     def __str__(self):
         return self.__repr__()
 
-    def get_position_after_move_pawn_forward(self, square, twice=False):
+    def get_position_after_move_pawn_forward(self, pawn, twice=False):
         pawns = deepcopy(self.pawns)
         up = (0, 1)
-        square.move(up)
+        pawn.move()
         if twice:
-            square.move(up)
-        pawns.set(square)
+            pawn.move(up)
         return PosBlack(pawns, self.queen)
 
     def generate_next_positions(self):
-        for pawn in self.pawns.get_squares():
-            if pawn.rank < LAST_RANK and (pawn.file, pawn.rank + 1) != (self.queen.file, self.queen.rank):
+        for pawn in self.pawns.pawns:
+            if not pawn.is_promoted() and not pawn.is_blocked(self.queen):
                 yield self.get_position_after_move_pawn_forward(pawn)
                 if pawn.rank == 2 and (pawn.file, 4) != (self.queen.file, self.queen.rank):
                     yield self.get_position_after_move_pawn_forward(pawn, twice=True)
 
 
 class PosBlack(Position):
+    def player(self):
+        return Player.BLACK
+
     def is_valid(self):
         return (super().is_valid() and
                 self.pawns.count() >= 1 and
@@ -323,35 +369,37 @@ class PosBlack(Position):
         return PosWhite(pawns, destination)
 
     def generate_next_positions(self):
-        for d in DIRECTIONS:
+        for d in Queen.DIRECTIONS:
             new_queen = deepcopy(self.queen)
             new_queen.move(d)
-            while new_queen.is_on_board():
+            while new_queen.move(d):
                 if not self.pawns.attack(new_queen):
                     yield self.get_position_after_move_queen(new_queen)
                 if self.pawns.occupy(new_queen):
                     break
-                new_queen.move(d)
 
 
 class EvaluationStore:
     def __init__(self):
-        self.store = [{} for _ in range(9)]  # i.e. store[n] contains positions with n pawns
+        self.store = {Player.WHITE: [{} for _ in range(9)],
+                      Player.BLACK: [{} for _ in range(9)]}
+        # i.e. store[p][n] contains positions with n pawns and p to play
 
     def save(self, position, evaluation):
         assert isinstance(position, Position)
         assert isinstance(evaluation, Status)
+        p = position.player()
         n = position.pawns.count()
         code = self.position_to_code(position)
-        assert code not in self.store[n], f"position already in store: {position}"
-        self.store[n][code] = evaluation
+        assert code not in self.store[p][n], f"position already in store: {position}"
+        self.store[p][n][code] = evaluation
 
     def __getitem__(self, position):
         assert isinstance(position, Position)
         assert isinstance(position.pawns, Pawns)
         n = position.pawns.count()
         code = self.position_to_code(position)
-        return self.store[n].get(code, None)
+        return self.store[position.player()][n].get(code, None)
 
     def print_stats(self):
         print("Number: ", sum([len(x) for x in self.store]))
@@ -361,8 +409,7 @@ class EvaluationStore:
 
     @staticmethod
     def position_to_code(position):
-        turn = Player.WHITE if isinstance(position, PosWhite) else Player.BLACK
-        result = [turn, position.queen.file, position.queen.rank]
+        result = [position.queen.file, position.queen.rank]
         for f in files:
             pawn = position.pawns.pawn_in_file(f)
             if pawn is None:
@@ -376,35 +423,20 @@ evaluation_store = EvaluationStore()
 
 
 def unit_test():
-    pawns = Pawns()
-    queen = Square(4, 5)
-    p = PosWhite(pawns, queen)
+    p = PosWhite(Pawns(), Queen(4, 5))
     assert p.evaluate() == Status.LOSE
 
-    pawns = Pawns()
-    pawns.set(Square(2, 8))
-    queen = Square(2, 3)
-    p = PosBlack(pawns, queen)
+    p = PosBlack(Pawns(Pawn(2, 8)), Queen(2, 3))
     assert p.evaluate() == Status.LOSE
 
-    pawns = Pawns()
-    pawns.set(Square(2, 7))
-    queen = Square(4, 8)
-    p = PosWhite(pawns, queen)
+    p = PosWhite(Pawns(Pawn(2, 7)), Queen(4, 8))
     assert p.evaluate() == Status.WIN
 
-    pawns = Pawns()
-    pawns.set(Square(2, 7))
-    queen = Square(2, 8)
-    p = PosWhite(pawns, queen)
+    p = PosWhite(Pawns(Pawn(2, 7)), Queen(2, 8))
     assert p.evaluate() == Status.DRAW
 
-    pawns = Pawns()
-    pawns.set(Square(2, 6))
-    queen = Square(2, 8)
-    p = PosBlack(pawns, queen)
+    p = PosBlack(Pawns(Pawn(2, 6)), Queen(2, 8))
     assert p.evaluate() == Status.WIN
-    p.evaluate()
 
 
 status_char_for_black = {
