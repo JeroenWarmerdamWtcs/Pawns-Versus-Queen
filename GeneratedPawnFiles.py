@@ -9,7 +9,7 @@ from itertools import product, dropwhile, combinations
 # If one combination can be obtained by another by moving all filled files to the right
 # we generate them next after each other.
 
-# The are two method for generation, each having another presentation.
+# There are two method for generation, each having another presentation.
 # The first generates the numbers of the files that contains columns, like
 #   (3, 4, 6)
 # The other generates eight boolean that specify whether the file is filed, like
@@ -20,13 +20,14 @@ def generate():
     yield []
     for nb in range(1, 9):
         comb_list = list(combinations(range(1, 9), nb))
-        comb_list.sort(key=lambda e: list(map(lambda v: v - e[0], e)))
+        comb_list.sort(key=lambda e: (list(map(lambda v: v - e[0], e[1:])), e[0]))
+        # the key of [2, 3, 6] is ([1, 4], 2)
+        # the key of [3, 4, 7] is ([1, 4], 3)
         for c in comb_list:
             yield c
 
 
 def generate2():
-
     def drop_while_false(comb):
         return list(dropwhile(lambda value: not value, comb))
 
