@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import tkinter.messagebox
 import main
+from basics import *
 
 files = range(1, 9)
 ranks = range(1, 9)
@@ -21,8 +22,8 @@ def eval():
         for qf in files:
             mp = main.Pawns()
             for pf in pawns:
-                mp.set(main.Square(pf, pawns[pf]))
-            e = main.evaluate(mp, main.Square(qf, qr))
+                mp.set(SQUARES(pf, pawns[pf]))
+            e = main.evaluate(mp, SQUARES(qf, qr))
             sq[(qf, qr)]._btn.config(text=e)
 
 
