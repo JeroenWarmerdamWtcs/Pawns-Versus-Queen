@@ -1,84 +1,138 @@
 import tkinter as tk
 from tkinter import ttk
-import tkinter.messagebox
+from tkinter import StringVar
 import main
 from basics import *
-
-files = range(1, 9)
-ranks = range(1, 9)
-
-pawns = {}  # dict from files to ranks. No pawn means not in dict
-
-sq = {}  # dict of (files, ranks) to Square class
-
+from BoardUI import Board, WHITE_PAWN_CHARACTER, BLACK_QUEEN_CHARACTER, CHESS_FONT
 
 root = tk.Tk()
-# noinspection SpellCheckingInspection
-pawn_image = tk.PhotoImage(file=r"C:\Users\jhawa\Documents\Jeroen\Diverse Code\PawnsVsQueen\pawn.png")
+
+pawns = {}  # dict from files to ranks. No pawn means not in dict
+queen = None  # either none, or (f,r)
+
+# status of the ui-board:
+player = StringVar(value="pawns")  # or value="queen
 
 
-def eval():
-    for qr in ranks:
-        for qf in files:
-            mp = main.Pawns()
-            for pf in pawns:
-                mp.set(SQUARES(pf, pawns[pf]))
-            e = main.evaluate(mp, SQUARES(qf, qr))
-            sq[(qf, qr)]._btn.config(text=e)
+def clear_board_and_set_pieces():
+    board_frame.clear()
+    for f, r in pawns.items():
+        board_frame.set_white_pawn(f, r)
+    if queen is not None:
+        board_frame.set_black_queen(*queen)
 
 
-def square_pressed(file, new_rank):
-    if not (file in files and
-            new_rank in ranks and
-            new_rank > 1):
+def get_main_pawns():
+    result = main.Pawns()
+    for f, r in pawns.items():
+        result.set(Pawn(f, r))
+    return result
+
+
+def evaluate_pawns_only_board():
+    mp = get_main_pawns()
+
+    # try queen on all empty squares
+    for qf in files:
+        for qr in ranks:
+            mq = Queen(qf, qr)
+            if not mp.occupy(mq):
+                if player.get() == "pawns":
+                    e = main.PosWhite(mp, mq).evaluate()
+                else:
+                    e = main.PosBlack(mp, mq).evaluate()
+
+                if e is not None:
+                    character = {Status.WIN: "+", Status.DRAW: "=", Status.LOSE: "-"}[e]
+                    board_frame.set_text_on_square(qf, qr, character)
+
+
+def evaluate_pawn_moves():
+    pos = main.PosWhite(get_main_pawns(), Queen(*queen))
+    for new_pawn in pos.generate_moves():
+        e = pos.get_position_after_move_pawn_forward(new_pawn).evaluate()
+        if e is not None:
+            character = {Status.WIN: "-", Status.DRAW: "=", Status.LOSE: "+"}[e]
+            board_frame.set_text_on_square(new_pawn.file, new_pawn.rank, character)
+            if e == Status.LOSE:
+                board_frame.set_background_highlighted(new_pawn.file, new_pawn.rank)
+
+
+def evaluate_queen_moves():
+    pos = main.PosBlack(get_main_pawns(), Queen(*queen))
+    for new_queen in pos.generate_moves():
+        e = pos.get_position_after_move_queen(new_queen).evaluate()
+        if e is not None:
+            if not pos.pawns.occupy(new_queen):
+                character = {Status.WIN: "-", Status.DRAW: "=", Status.LOSE: "+"}[e]
+                board_frame.set_text_on_square(new_queen.file, new_queen.rank, character)
+            if e == Status.LOSE:
+                board_frame.set_background_highlighted(new_queen.file, new_queen.rank)
+
+
+def evaluate():
+    clear_board_and_set_pieces()
+
+    if queen is None:
+        evaluate_pawns_only_board()
+    elif player.get() == "pawns":
+        evaluate_pawn_moves()
+    else:
+        evaluate_queen_moves()
+
+
+def square_pressed(file, rank):
+    global queen
+    if not (file in files and rank in ranks):
         return
 
-    if file not in pawns:
-        pawns[file] = new_rank
-        sq[(file, new_rank)].set_pawn()
-    else:
-        old_rank = pawns[file]
-        sq[(file, old_rank)].remove_pawn()
-        if new_rank != old_rank:
-            pawns[file] = new_rank
-            sq[(file, new_rank)].set_pawn()
+    square = board_frame.squares[file, rank]
+
+    if player.get() == "pawns":
+        if rank in (1, 8):
+            return
+
+        if queen == (file, rank):
+            queen = None
+
+        if file not in pawns:
+            pawns[file] = rank
+            square.set_white_pawn()
         else:
-            del pawns[file]
+            board_frame.squares[file, pawns[file]].clear()
+            if rank != pawns[file]:
+                pawns[file] = rank
+                square.set_white_pawn()
+            else:
+                del pawns[file]
 
-    eval()
+    else:
+        if (file, rank) == queen:
+            square.clear()
+            queen = None
+        else:
+            if queen is not None:
+                board_frame.squares(*queen).clear()
+            if pawns.get(file, -1) == rank:
+                del pawns[file]
+            square.set_black_queen()
+            queen = (file, rank)
 
-
-class Square(ttk.Frame):
-    def __init__(self, parent, file, rank):
-        self.file = file
-        self.rank = rank
-        ttk.Frame.__init__(self, parent, height=20, width=20, style="Square.TFrame")
-
-        self.pack_propagate(0)
-        self._btn = tk.Button(self,
-                              command=lambda: square_pressed(self.file, self.rank),
-                              bd=0)
-        if file % 2 == rank % 2:
-            self._btn.config(activebackground='#b7f731')
-            self._btn.config(bg='#b7f731')
-        self._btn.pack(fill=tk.BOTH, expand=1)
-
-    def set_pawn(self):
-        self._btn.configure(image=pawn_image)
-
-    def remove_pawn(self):
-        self._btn.configure(image="")
+    evaluate()
 
 
-frm = ttk.Frame(root, padding=10)
-frm.grid()
-board = ttk.Frame(frm, padding=10)
-board.grid(column=1, row=1, rowspan=2)
+board_frame = Board(root, square_pressed)
+board_frame.grid(column=1, row=1)
 
-for f in files:
-    for r in ranks:
-        sq[(f, r)] = Square(board, f, r)
-        sq[(f, r)].grid(column=f, row=9 - r)
+turn_frame = tk.Frame(root)  # their units in pixels
+turn_frame.grid(column=2, row=1)
+turn_pawns = tk.Radiobutton(turn_frame, font=CHESS_FONT, text=WHITE_PAWN_CHARACTER, variable=player, value='pawns',
+                            command=evaluate)
+turn_pawns.grid(column=1, row=1)
+turn_queen = tk.Radiobutton(turn_frame, font=CHESS_FONT, text=BLACK_QUEEN_CHARACTER, variable=player, value='queen',
+                            command=evaluate)
+turn_queen.grid(column=1, row=2)
 
-tk.Button(frm, text="Quit", command=root.destroy).grid(column=9, row=2)
+ttk.Button(root, text="Quit", command=root.destroy).grid(column=2, row=2, sticky="E", padx=10, pady=10)
+
 root.mainloop()
