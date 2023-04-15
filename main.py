@@ -208,6 +208,9 @@ class Position:
     def is_lost_by_definition(self):
         assert False, f"abstract method called on {self}"
 
+    def generate_moves(self):
+        assert False, f"abstract method called on {self}"
+
     def generate_next_positions(self):
         assert False, f"abstract method called on {self}"
         # noinspection PyUnreachableCode
@@ -267,20 +270,28 @@ class PosWhite(Position):
     def __str__(self):
         return self.__repr__()
 
-    def get_position_after_move_pawn_forward(self, pawn_file, twice=False):
+    def get_position_after_move_pawn_forward(self, new_pawn):
         pawns = deepcopy(self.pawns)
-        pawn = pawns.pawn_in_file(pawn_file)
-        pawn.move()
-        if twice:
-            pawn.move()
+        pawns.set(new_pawn)
         return PosBlack(pawns, self.queen)
 
-    def generate_next_positions(self):
+    def generate_moves(self):
         for pawn in self.pawns.pawns:
             if not pawn.is_promoted() and not pawn.is_blocked_by(self.queen):
-                yield self.get_position_after_move_pawn_forward(pawn.file)
+                new_pawn = deepcopy(pawn)
+                new_pawn.move()
+                assert isinstance(new_pawn, Pawn)
+                yield new_pawn
                 if pawn.rank == 2 and (pawn.file, 4) != (self.queen.file, self.queen.rank):
-                    yield self.get_position_after_move_pawn_forward(pawn.file, twice=True)
+                    new_pawn = deepcopy(pawn)
+                    new_pawn.move()
+                    new_pawn.move()
+                    assert isinstance(new_pawn, Pawn)
+                    yield new_pawn
+
+    def generate_next_positions(self):
+        for pawn in self.generate_moves():
+            yield self.get_position_after_move_pawn_forward(pawn)
 
     def get_position_after_move_backwards_queen(self, origin):
         pawns = deepcopy(self.pawns)
@@ -326,14 +337,18 @@ class PosBlack(Position):
         pawns.empty_square(destination)
         return PosWhite(pawns, destination)
 
-    def generate_next_positions(self):
+    def generate_moves(self):
         for d in Queen.DIRECTIONS:
             new_queen = deepcopy(self.queen)
             while new_queen.move(d):
                 if not self.pawns.attack(new_queen):
-                    yield self.get_position_after_move_queen(new_queen)
+                    yield new_queen
                 if self.pawns.occupy(new_queen):
                     break
+
+    def generate_next_positions(self):
+        for new_queen in self.generate_moves():
+            yield self.get_position_after_move_queen(new_queen)
 
     def get_position_after_move_pawn_backwards(self, pawn_file, twice=False):
         pawns = deepcopy(self.pawns)
@@ -429,16 +444,22 @@ def unit_test():
 unit_test()
 
 
+# status_char_for_black = {
+#     (None, Status.WIN): "+", (None, Status.DRAW): "=", (None, Status.LOSE): "-",
+#     (Status.WIN, Status.WIN): "+", (Status.WIN, Status.DRAW): "D", (Status.WIN, Status.LOSE): "-",
+#     (Status.DRAW, Status.WIN): "B", (Status.DRAW, Status.DRAW): "E", (Status.DRAW, Status.LOSE): "H",
+#     (Status.LOSE, Status.WIN): "w", (Status.LOSE, Status.DRAW): "F", (Status.LOSE, Status.LOSE): "z"}
+
 status_char_for_black = {
     (None, Status.WIN): "+", (None, Status.DRAW): "=", (None, Status.LOSE): "-",
-    (Status.WIN, Status.WIN): "+", (Status.WIN, Status.DRAW): "D", (Status.WIN, Status.LOSE): "-",
+    (Status.WIN, Status.WIN): "A", (Status.WIN, Status.DRAW): "D", (Status.WIN, Status.LOSE): "G",
     (Status.DRAW, Status.WIN): "B", (Status.DRAW, Status.DRAW): "E", (Status.DRAW, Status.LOSE): "H",
-    (Status.LOSE, Status.WIN): "w", (Status.LOSE, Status.DRAW): "F", (Status.LOSE, Status.LOSE): "z"}
+    (Status.LOSE, Status.WIN): "C", (Status.LOSE, Status.DRAW): "F", (Status.LOSE, Status.LOSE): "I"}
 
 
 def evaluate(pawns, queen):
     if pawns.occupy(queen):
-        return 'p'
+        return None, None
 
     eval_black_to_play = PosBlack(pawns, queen).evaluate()
     eval_white_to_play = None
@@ -446,7 +467,7 @@ def evaluate(pawns, queen):
     if p.is_valid():
         eval_white_to_play = p.evaluate()
 
-    return status_char_for_black[(eval_white_to_play, eval_black_to_play)]
+    return eval_white_to_play, eval_black_to_play
 
 
 evaluation_store = EvaluationStore()
@@ -515,14 +536,14 @@ def generate_and_evaluate_all_positions_with_three_pawns():
                 if (pawn1.rank > 1 and pawn2.rank > 1 and pawn3.rank > 1 and
                         pawn1.file < pawn2.file < pawn3.file):
                     pawns = Pawns()
-                    pawns.set(pawn1)
-                    pawns.set(pawn2)
-                    pawns.set(pawn3)
+                    pawns.set(Pawn(pawn1))
+                    pawns.set(Pawn(pawn2))
+                    pawns.set(Pawn(pawn3))
                     for queen in SQUARES.values():
-                        p = PosWhite(pawns, queen)
+                        p = PosWhite(pawns, Queen(queen))
                         if p.is_valid():
                             p.evaluate()
-                        p = PosBlack(pawns, queen)
+                        p = PosBlack(pawns, Queen(queen))
                         if p.is_valid():
                             p.evaluate()
 
@@ -569,39 +590,7 @@ def do_example():
         print()
 
 
-def analyse_draw():
-    print("Analyse draw")
-    # draw in 0
-    draw = [[]]
-    for square in SQUARES.values():
-        if 2 <= square.rank < 8:
-            pawn = Pawn(square.file, square.rank)
-            pawns = Pawns(pawn)
-            p = PosWhite(pawns, Queen(square.file, square.rank+1))
-            assert p.evaluate() == Status.DRAW
-            draw[0].append(p)
-    print(f"- draw by definition: number positions = {len(draw[0])}")
-    assert len(draw[0]) == 48
-
-    while draw[-1]:
-        # draw in n -> draw in n+1
-        draw.append([])
-        for p in draw[-2]:
-            for q in p.generate_prev_positions():
-                if q not in draw[-1]:
-                    if q.evaluate() == Status.DRAW:
-                        draw[-1].append(deepcopy(q))
-        print(f"- draw in {len(draw)-1}: number positions = {len(draw[-1])}", end="")
-        if 0 < len(draw[-1]) < 10:
-            print(" ", draw[-1])
-        else:
-            print("")
-
-    input("ready")
-
-
 if __name__ == "__main__":
-    analyse_draw()
     unit_test()
     generate_and_evaluate()
     do_example()
