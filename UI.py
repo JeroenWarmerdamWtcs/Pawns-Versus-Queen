@@ -25,7 +25,7 @@ def clear_board_and_set_pieces():
 def get_main_pawns():
     result = main.Pawns()
     for f, r in pawns.items():
-        result.set(Pawn(f, r))
+        result.set(BOARD.get_square(f, r))
     return result
 
 
@@ -33,9 +33,9 @@ def evaluate_pawns_only_board():
     mp = get_main_pawns()
 
     # try queen on all empty squares
-    for qf in files:
-        for qr in ranks:
-            mq = Queen(qf, qr)
+    for qf in FILES:
+        for qr in RANKS:
+            mq = Queen(BOARD.get_square(qf, qr))
             if not mp.occupy(mq):
                 if player.get() == "pawns":
                     e = main.PosWhite(mp, mq).evaluate()
@@ -48,7 +48,7 @@ def evaluate_pawns_only_board():
 
 
 def evaluate_pawn_moves():
-    pos = main.PosWhite(get_main_pawns(), Queen(*queen))
+    pos = main.PosWhite(get_main_pawns(), Queen(BOARD.get_square(*queen)))
     for new_pawn in pos.generate_moves():
         e = pos.get_position_after_move_pawn_forward(new_pawn).evaluate()
         if e is not None:
@@ -59,7 +59,7 @@ def evaluate_pawn_moves():
 
 
 def evaluate_queen_moves():
-    pos = main.PosBlack(get_main_pawns(), Queen(*queen))
+    pos = main.PosBlack(get_main_pawns(), Queen(BOARD.get_square(*queen)))
     for new_queen in pos.generate_moves():
         e = pos.get_position_after_move_queen(new_queen).evaluate()
         if e is not None:
@@ -83,7 +83,7 @@ def evaluate():
 
 def square_pressed(file, rank):
     global queen
-    if not (file in files and rank in ranks):
+    if not (file in FILES and rank in RANKS):
         return
 
     square = board_frame.squares[file, rank]

@@ -52,8 +52,8 @@ class Board(tk.Frame):
         self.square_pressed = call_back
         self.squares = {}
 
-        for file in files:
-            for rank in ranks:
+        for file in FILES:
+            for rank in RANKS:
                 is_dark_square = file % 2 == rank % 2
                 self.squares[file, rank] = Square(self, is_dark_square, partial(self.square_pressed, file, rank))
                 self.squares[file, rank].grid(row=8-rank, column=file)  # put frame where the button should be
@@ -74,6 +74,6 @@ class Board(tk.Frame):
         self.squares[file, rank].set_background_highlighted()
 
     def clear(self):
-        for file in files:
-            for rank in ranks:
+        for file in FILES:
+            for rank in RANKS:
                 self.squares[file, rank].clear()

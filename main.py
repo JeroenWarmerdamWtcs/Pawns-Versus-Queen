@@ -1,3 +1,4 @@
+from timeit import default_timer as timer
 from copy import deepcopy
 from basics import *
 
@@ -115,18 +116,18 @@ from basics import *
 
 
 class Pawns:
-    def __init__(self, *pawns):
+    def __init__(self, *squares):
         self.__pawns = {}  # __pawns[file] == None or __pawns[file].file == file
-        for pawn in pawns:
-            assert isinstance(pawn, Pawn)
-            self.set(pawn)
+        for square in squares:
+            assert isinstance(square, Square)
+            self.set(square)
 
     def __str__(self):
         return " ".join(map(str, self.pawns))
 
-    def set(self, pawn):
-        assert isinstance(pawn, Pawn)
-        self.__pawns[pawn.file] = pawn  # this will automatically remove any other pawns in this file
+    def set(self, square):
+        assert isinstance(square, Square)
+        self.__pawns[square.file] = Pawn(square)  # this will automatically remove any other pawns in this file
 
     def empty_file(self, file):
         self.__pawns.pop(file, None)
@@ -161,10 +162,10 @@ class Pawns:
         if square.rank == 1:
             return False
         if square.file < 8:
-            if self.occupy(SQUARES[square.file + 1, square.rank - 1]):
+            if self.occupy(BOARD.get_neighbour(square, Direction.SE)):
                 return True
         if square.file > 1:
-            if self.occupy(SQUARES[square.file - 1, square.rank - 1]):
+            if self.occupy(BOARD.get_neighbour(square, Direction.SW)):
                 return True
         return False
 
@@ -173,6 +174,11 @@ class Pawns:
 
 
 # ######################## QUEEN MOVES ##########################
+
+counter_ws = 0
+counter_w2 = 0
+counter_bs = 0
+counter_b2 = 0
 
 
 class Position:
@@ -187,12 +193,12 @@ class Position:
 
     def get_board_as_string(self):
         result = ""
-        for r in reversed(ranks):
+        for r in reversed(RANKS):
             result += str(r)
-            for f in files:
+            for f in FILES:
                 if (f, r) == self.queen:
                     result += " Q"
-                elif self.pawns.occupy(SQUARES(f, r)):
+                elif self.pawns.occupy(BOARD.get_squares(f, r)):
                     result += " p"
                 else:
                     result += " ."
@@ -222,9 +228,23 @@ class Position:
         return []
 
     def evaluate(self):
+        if self.player() == Player.WHITE:
+            global counter_ws
+            counter_ws += 1
+        else:
+            global counter_bs
+            counter_bs += 1
+
         result = evaluation_store[self]
         if result is not None:
             return result
+
+        if self.player() == Player.WHITE:
+            global counter_w2
+            counter_w2 += 1
+        else:
+            global counter_b2
+            counter_b2 += 1
 
         if self.is_lost_by_definition():
             evaluation_store.save(self, Status.LOSE)
@@ -241,7 +261,7 @@ class Position:
             if new_eval == Status.DRAW:
                 best = Status.DRAW
 
-        if stalemate:
+        if stalemate and False:  # JWA
             assert self.player() == Player.WHITE
             evaluation_store.save(self, Status.DRAW)
             return Status.DRAW
@@ -259,7 +279,7 @@ class PosWhite(Position):
     def is_valid(self):
         return (super().is_valid() and
                 self.pawns.get_nb_promoted() == 0 and
-                not self.pawns.attack(self.queen))
+                not self.pawns.attack(self.queen.square))
 
     def is_lost_by_definition(self):
         return self.pawns.count() == 0
@@ -270,24 +290,20 @@ class PosWhite(Position):
     def __str__(self):
         return self.__repr__()
 
-    def get_position_after_move_pawn_forward(self, new_pawn):
+    def get_position_after_move_pawn_forward(self, new_pawn_square):
         pawns = deepcopy(self.pawns)
-        pawns.set(new_pawn)
+        pawns.set(new_pawn_square)
         return PosBlack(pawns, self.queen)
 
     def generate_moves(self):
         for pawn in self.pawns.pawns:
-            if not pawn.is_promoted() and not pawn.is_blocked_by(self.queen):
-                new_pawn = deepcopy(pawn)
-                new_pawn.move()
-                assert isinstance(new_pawn, Pawn)
-                yield new_pawn
-                if pawn.rank == 2 and (pawn.file, 4) != (self.queen.file, self.queen.rank):
-                    new_pawn = deepcopy(pawn)
-                    new_pawn.move()
-                    new_pawn.move()
-                    assert isinstance(new_pawn, Pawn)
-                    yield new_pawn
+            new_pawn_square = BOARD.get_neighbour(pawn.square, Direction.N)
+            if new_pawn_square not in (None, self.queen.square):
+                yield new_pawn_square
+                if new_pawn_square.rank == 3:
+                    new_pawn_square = BOARD.get_neighbour(new_pawn_square, Direction.N)
+                    if new_pawn_square != self.queen.square:
+                        yield new_pawn_square
 
     def generate_next_positions(self):
         for pawn in self.generate_moves():
@@ -301,17 +317,18 @@ class PosWhite(Position):
         queen_might_have_captured_a_pawn = \
             self.pawns.pawn_in_file(self.queen.file) is None and 2 <= self.queen.rank <= 7
 
-        for d in Queen.DIRECTIONS:
-            new_queen = deepcopy(self.queen)
-            while new_queen.move(d):
-                if self.pawns.occupy(new_queen):
+        for d in Direction:
+            new_queen_square = BOARD.get_neighbour(self.queen.square, d)
+            while new_queen_square:
+                if self.pawns.occupy(new_queen_square):
                     break
-                yield self.get_position_after_move_backwards_queen(new_queen)
+                yield self.get_position_after_move_backwards_queen(new_queen_square)
                 if queen_might_have_captured_a_pawn:
                     pawn = Pawn(self.queen.square)
-                    position = self.get_position_after_move_backwards_queen(new_queen)
+                    position = self.get_position_after_move_backwards_queen(new_queen_square)
                     position.pawns.set(pawn)
                     yield position
+                new_queen_square = BOARD.get_neighbour(new_queen_square, d)
 
 
 class PosBlack(Position):
@@ -335,16 +352,18 @@ class PosBlack(Position):
     def get_position_after_move_queen(self, destination):
         pawns = deepcopy(self.pawns)
         pawns.empty_square(destination)
-        return PosWhite(pawns, destination)
+        return PosWhite(pawns, Queen(destination))
 
     def generate_moves(self):
-        for d in Queen.DIRECTIONS:
-            new_queen = deepcopy(self.queen)
-            while new_queen.move(d):
-                if not self.pawns.attack(new_queen):
-                    yield new_queen
-                if self.pawns.occupy(new_queen):
+        queen_square = self.queen.square
+        for d in Direction:
+            new_queen_square = BOARD.get_neighbour(queen_square, d)
+            while new_queen_square:
+                if not self.pawns.attack(new_queen_square):
+                    yield new_queen_square
+                if self.pawns.occupy(new_queen_square):
                     break
+                new_queen_square = BOARD.get_neighbour(new_queen_square, d)
 
     def generate_next_positions(self):
         for new_queen in self.generate_moves():
@@ -412,7 +431,7 @@ class EvaluationStore:
     @staticmethod
     def position_to_code(position):
         result = [position.queen.file, position.queen.rank]
-        for f in files:
+        for f in FILES:
             pawn = position.pawns.pawn_in_file(f)
             if pawn is None:
                 result += [f, -1]
@@ -425,23 +444,25 @@ evaluation_store = EvaluationStore()
 
 
 def unit_test():
-    p = PosWhite(Pawns(), Queen(4, 5))
+    p = PosWhite(Pawns(), Queen(BOARD.get_squares(4, 5)))
     assert p.evaluate() == Status.LOSE
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
 
-    p = PosBlack(Pawns(Pawn(SQUARES[2, 8])), Queen(2, 3))
+    p = PosBlack(Pawns(Pawn(BOARD.get_squares(2, 8))), Queen(BOARD.get_squares(2, 3)))
     assert p.evaluate() == Status.LOSE
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
 
-    p = PosWhite(Pawns(Pawn(2, 7)), Queen(4, 8))
+    p = PosWhite(Pawns(Pawn(BOARD.get_squares(2, 7))), Queen(BOARD.get_squares(4, 8)))
     assert p.evaluate() == Status.WIN
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
 
-    p = PosWhite(Pawns(Pawn(2, 7)), Queen(2, 8))
+    p = PosWhite(Pawns(Pawn(BOARD.get_squares(2, 7))), Queen(BOARD.get_squares(2, 8)))
     assert p.evaluate() == Status.DRAW
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
 
-    p = PosBlack(Pawns(Pawn(2, 6)), Queen(2, 8))
+    p = PosBlack(Pawns(Pawn(BOARD.get_squares(2, 6))), Queen(BOARD.get_squares(2, 8)))
     assert p.evaluate() == Status.WIN
-
-
-unit_test()
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
 
 
 # status_char_for_black = {
@@ -470,9 +491,6 @@ def evaluate(pawns, queen):
     return eval_white_to_play, eval_black_to_play
 
 
-evaluation_store = EvaluationStore()
-
-
 # def print_stats():
 #     stat = {}
 #     for code in evaluation_store:
@@ -497,55 +515,54 @@ evaluation_store = EvaluationStore()
 
 
 def generate_and_evaluate_all_positions_without_pawns():
-    for queen in SQUARES.values():
-        assert PosWhite(Pawns(), Queen(queen.file, queen.rank)).evaluate() == Status.LOSE
+    for queen in BOARD.squares:
+        assert PosWhite(Pawns(), Queen(queen)).evaluate() == Status.LOSE
 
 
 def generate_and_evaluate_all_positions_with_one_pawn():
-    for square in SQUARES.values():
+    for square in BOARD.squares:
         if square.rank > 1:
-            pawn = Pawn(square.file, square.rank)
-            pawns = Pawns(pawn)
-            for queen in SQUARES.values():
-                p = PosWhite(pawns, Queen(queen.file, queen.rank))
+            pawns = Pawns(square)
+            for queen in BOARD.squares:
+                p = PosWhite(pawns, Queen(queen))
                 if p.is_valid():
                     p.evaluate()
-                p = PosBlack(pawns, Queen(queen.file, queen.rank))
+                p = PosBlack(pawns, Queen(queen))
                 if p.is_valid():
                     p.evaluate()
 
 
 def generate_and_evaluate_all_positions_with_two_pawns():
-    for pawn1 in SQUARES.values():
-        for pawn2 in SQUARES.values():
+    for pawn1 in BOARD.squares:
+        for pawn2 in BOARD.squares:
             if pawn1.rank > 1 and pawn2.rank > 1 and pawn1.file < pawn2.file:
-                pawns = Pawns(Pawn(pawn1.file, pawn1.rank), Pawn(pawn2.file, pawn2.rank))
-                for queen in SQUARES.values():
-                    p = PosWhite(pawns, Queen(queen.file, queen.rank))
+                pawns = Pawns(pawn1, pawn2)
+                for queen in BOARD.squares:
+                    p = PosWhite(pawns, Queen(queen))
                     if p.is_valid():
                         p.evaluate()
-                    p = PosBlack(pawns, Queen(queen.file, queen.rank))
+                    p = PosBlack(pawns, Queen(queen))
                     if p.is_valid():
                         p.evaluate()
 
 
-def generate_and_evaluate_all_positions_with_three_pawns():
-    for pawn1 in SQUARES.values():
-        for pawn2 in SQUARES.values():
-            for pawn3 in SQUARES.values():
-                if (pawn1.rank > 1 and pawn2.rank > 1 and pawn3.rank > 1 and
-                        pawn1.file < pawn2.file < pawn3.file):
-                    pawns = Pawns()
-                    pawns.set(Pawn(pawn1))
-                    pawns.set(Pawn(pawn2))
-                    pawns.set(Pawn(pawn3))
-                    for queen in SQUARES.values():
-                        p = PosWhite(pawns, Queen(queen))
-                        if p.is_valid():
-                            p.evaluate()
-                        p = PosBlack(pawns, Queen(queen))
-                        if p.is_valid():
-                            p.evaluate()
+# def generate_and_evaluate_all_positions_with_three_pawns():
+#     for pawn1 in SQUARES.values():
+#         for pawn2 in SQUARES.values():
+#             for pawn3 in SQUARES.values():
+#                 if (pawn1.rank > 1 and pawn2.rank > 1 and pawn3.rank > 1 and
+#                         pawn1.file < pawn2.file < pawn3.file):
+#                     pawns = Pawns()
+#                     pawns.set(Pawn(pawn1))
+#                     pawns.set(Pawn(pawn2))
+#                     pawns.set(Pawn(pawn3))
+#                     for queen in SQUARES.values():
+#                         p = PosWhite(pawns, Queen(queen))
+#                         if p.is_valid():
+#                             p.evaluate()
+#                         p = PosBlack(pawns, Queen(queen))
+#                         if p.is_valid():
+#                             p.evaluate()
 
 
 def generate_and_evaluate_all_positions_with(nb_pawns):
@@ -554,8 +571,10 @@ def generate_and_evaluate_all_positions_with(nb_pawns):
 
 def generate_and_evaluate():
     generate_and_evaluate_all_positions_without_pawns()
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
     assert len(evaluation_store.store[Player.WHITE][0]) == 64, len(evaluation_store.store[Player.WHITE][0])
     generate_and_evaluate_all_positions_with_one_pawn()
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
     # white to play:
     #  6 + 6 rook pawns each with 62 queen positions
     #  6 * 6 other pawns each with 61 queen positions
@@ -572,25 +591,34 @@ def generate_and_evaluate():
     evaluation_store.print_stats()
     generate_and_evaluate_all_positions_with_two_pawns()
     evaluation_store.print_stats()
+    return
     generate_and_evaluate_all_positions_with_three_pawns()
     evaluation_store.print_stats()
 
 
 def do_example():
     pawns = Pawns()
-    pawns.set(SQUARES(4, 5))
+    pawns.set(BOARD.get_square(4, 5))
     # pawns.set(Square((5, 5))
 
-    for r in reversed(ranks):
+    for r in reversed(RANKS):
         print(r, end="")
-        for f in files:
+        for f in FILES:
             print(' ', end="")
-            queen = SQUARES(f, r)
+            queen = Queen(BOARD.get_square(f, r))
             print(evaluate(pawns, queen), end="")
         print()
 
 
 if __name__ == "__main__":
-    unit_test()
+    start = timer()
+    # unit_test()
     generate_and_evaluate()
+    end = timer()
+    print((counter_ws, counter_w2, counter_bs, counter_b2))
+    print(end - start)
+
     do_example()
+
+(453817, 62078, 202980, 86856)
+77.7903819
