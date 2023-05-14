@@ -1,5 +1,5 @@
 from enum import IntEnum, Enum, unique
-from typing import List, Dict, Tuple
+from typing import Dict, Tuple
 from copy import copy
 
 RANKS = range(1, 9)
@@ -40,14 +40,6 @@ class Square:
         return self.__rank
 
 
-def _generate_all_valid_squares_a8_b8___h1() -> Dict[Tuple[int, int], Square]:
-    result = {}
-    for rank in reversed(RANKS):
-        for file in FILES:
-            result[file, rank] = Square(file, rank)
-    return result
-
-
 @unique
 class Direction(IntEnum):
     N = 0
@@ -70,6 +62,14 @@ class DirectionVector(Enum):
     SW = (-1, -1)
     W = (-1, 0)
     NW = (-1, 1)
+
+
+def _generate_all_valid_squares_a8_b8___h1() -> Dict[Tuple[int, int], Square]:
+    result = {}
+    for rank in reversed(RANKS):
+        for file in FILES:
+            result[file, rank] = Square(file, rank)
+    return result
 
 
 def _generate_neighbours(squares: Dict[Tuple[int, int], Square]) -> Dict[Square, Dict[Direction, Square]]:
@@ -97,6 +97,10 @@ class Board:
 
     def get_neighbour(self, square: Square, direction: Direction) -> Square:
         return self._neighbours[square][direction]
+
+    def move(self, square: Square, direction: Direction) -> bool:
+        square = self.get_neighbour(square, direction)
+        return square is not None
 
 
 class Piece:
