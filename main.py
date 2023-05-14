@@ -1,6 +1,7 @@
 from timeit import default_timer as timer
 from copy import deepcopy
 from basics import *
+from abc import ABC, abstractmethod
 
 # This is a Python script for solving the game "queen vs pawns":
 # The game start with the white pawns and the black queen
@@ -144,7 +145,7 @@ class Pawns:
         return self.__pawns.values()
 
     def get_highest_rank(self):
-        return max([pawn.file for pawn in self.pawns], default=0)
+        return max([pawn.rank for pawn in self.pawns], default=0)
 
     def get_nb_promoted(self):
         return sum([pawn.is_promoted() for pawn in self.pawns])
@@ -181,11 +182,11 @@ counter_bs = 0
 counter_b2 = 0
 
 
-class Position:
-    def __init__(self, pawns, queen):
+class Position(ABC):
+    def __init__(self, pawns: Pawns, queen: Queen):
         assert isinstance(pawns, Pawns)
         assert isinstance(queen, Queen)
-        self.pawns = deepcopy(pawns)
+        self.pawns = deepcopy(pawns)  # JWA
         self.queen = queen
 
     def is_valid(self):
@@ -196,9 +197,10 @@ class Position:
         for r in reversed(RANKS):
             result += str(r)
             for f in FILES:
-                if (f, r) == self.queen:
+                square = BOARD.get_square(f, r)
+                if self.queen.square == square:
                     result += " Q"
-                elif self.pawns.occupy(BOARD.get_squares(f, r)):
+                elif self.pawns.occupy(square):
                     result += " p"
                 else:
                     result += " ."
@@ -206,26 +208,27 @@ class Position:
         result += "  a b c d e f g h\n"
         return result
 
+    @abstractmethod
     def player(self) -> Player:
-        assert False, f"abstract method called on {self}"
-        # noinspection PyUnreachableCode
-        return Player.WHITE
+        return NotImplemented
 
+    @abstractmethod
     def is_lost_by_definition(self):
-        assert False, f"abstract method called on {self}"
+        return NotImplemented
 
+    @abstractmethod
     def generate_moves(self):
-        assert False, f"abstract method called on {self}"
+        return NotImplemented
 
+    @abstractmethod
     def generate_next_positions(self):
-        assert False, f"abstract method called on {self}"
-        # noinspection PyUnreachableCode
-        return []
+        while False:
+            yield NotImplemented
 
+    @abstractmethod
     def generate_prev_positions(self):
-        assert False, f"abstract method called on {self}"
-        # noinspection PyUnreachableCode
-        return []
+        while False:
+            yield NotImplemented
 
     def evaluate(self):
         if self.player() == Player.WHITE:
@@ -620,5 +623,5 @@ if __name__ == "__main__":
 
     do_example()
 
-(453817, 62078, 202980, 86856)
-77.7903819
+# (453817, 62078, 202980, 86856) 22.5s
+# 77.7903819
