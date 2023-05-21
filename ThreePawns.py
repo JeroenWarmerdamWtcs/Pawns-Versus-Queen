@@ -4,19 +4,17 @@ from main import *
 def check_pawns_win_against_queen_on_all_legal_squares(pawns):
     for sq in BOARD.squares:
         queen = Queen(sq)
-        if sq not in [p.square for p in pawns.pawns]:
+        if sq not in [p.square for p in pawns.squares]:
             pos = PosWhite(pawns, queen)
             if pos.is_valid():
                 assert pos.evaluate() == Status.WIN, pos
 
 
 def check_queen_wins_on_all_legal_squares(pawns):
-    for sq in BOARD.squares:
-        queen = Queen(sq)
-        if sq not in [p.square for p in pawns.pawns]:
-            pos = PosBlack(pawns, queen)
-            if pos.is_valid():
-                assert pos.evaluate() == Status.WIN, pos
+    for square in filter(lambda sq: sq not in pawns, BOARD.squares):
+        pos = PosBlack(pawns, Queen(sq))
+        if pos.is_valid():
+            assert pos.evaluate() == Status.WIN, pos
 
 
 def queen_wins_against_three_pawns_in_adjacent_files_at_rank_5_or_lower():

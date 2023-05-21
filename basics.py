@@ -85,22 +85,23 @@ def _generate_neighbours(squares: Dict[Tuple[int, int], Square]) -> Dict[Square,
 
 class Board:
     def __init__(self):
-        self._squares = _generate_all_valid_squares_a8_b8___h1()
-        self._neighbours = _generate_neighbours(self._squares)
+        self._square_dict = _generate_all_valid_squares_a8_b8___h1()
+        self._neighbours = _generate_neighbours(self._square_dict)
+        self._pawnsquares = [sq for sq in self.squares if sq.rank > 1]
 
     def get_square(self, file, rank):
-        return self._squares[file, rank]
+        return self._square_dict[file, rank]
 
     @property
     def squares(self):
-        return self._squares.values()
+        return self._square_dict.values()
 
     def get_neighbour(self, square: Square, direction: Direction) -> Square:
         return self._neighbours[square][direction]
 
-    def move(self, square: Square, direction: Direction) -> bool:
-        square = self.get_neighbour(square, direction)
-        return square is not None
+    @property
+    def pawn_squares(self):
+        return self._pawnsquares
 
 
 class Piece:
@@ -125,6 +126,14 @@ class Piece:
     def move_to(self, square):
         assert isinstance(square, Square)
         self.__square = square
+
+    def move(self, direction: Direction) -> bool:
+        square = BOARD.get_neighbour(self.__square, direction)
+        if square is None:
+            return False
+        else:
+            self.__square = square
+            return True
 
 
 class Pawn(Piece):

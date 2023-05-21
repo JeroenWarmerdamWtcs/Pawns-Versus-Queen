@@ -118,44 +118,44 @@ from abc import ABC, abstractmethod
 
 class Pawns:
     def __init__(self, *squares):
-        self.__pawns = {}  # __pawns[file] == None or __pawns[file].file == file
+        self._square_dict = {}  # __squares[file] == None or __squares[file].file == file
         for square in squares:
             assert isinstance(square, Square)
             self.set(square)
 
     def __str__(self):
-        return " ".join(map(str, self.pawns))
+        return " ".join(map(str, self.squares))
 
     def set(self, square):
         assert isinstance(square, Square)
-        self.__pawns[square.file] = Pawn(square)  # this will automatically remove any other pawns in this file
+        self._square_dict[square.file] = Pawn(square)  # this will automatically remove any other pawns in this file
 
     def empty_file(self, file):
-        self.__pawns.pop(file, None)
+        self._square_dict.pop(file, None)
 
     def empty_square(self, square):
         if self.occupy(square):
             self.empty_file(square.file)
 
     def count(self):
-        return len(self.__pawns)
+        return len(self._square_dict)
 
     @property
-    def pawns(self):
-        return self.__pawns.values()
+    def squares(self):
+        return self._square_dict.values()
 
     def get_highest_rank(self):
-        return max([pawn.rank for pawn in self.pawns], default=0)
+        return max([pawn.rank for pawn in self.squares], default=0)
 
     def get_nb_promoted(self):
-        return sum([pawn.is_promoted() for pawn in self.pawns])
+        return sum([pawn.is_promoted() for pawn in self.squares])
 
     def get_promoted_pawn(self):
-        return next(filter(lambda pawn: pawn.is_promoted(), self.pawns), None)
+        return next(filter(lambda pawn: pawn.is_promoted(), self.squares), None)
 
     def occupy(self, square):
-        if square.file in self.__pawns:
-            return self.__pawns[square.file].rank == square.rank
+        if square.file in self._square_dict:
+            return self._square_dict[square.file].rank == square.rank
         else:
             return False
 
@@ -171,7 +171,7 @@ class Pawns:
         return False
 
     def pawn_in_file(self, file):
-        return self.__pawns.get(file, None)
+        return self._square_dict.get(file, None)
 
 
 # ######################## QUEEN MOVES ##########################
@@ -299,7 +299,7 @@ class PosWhite(Position):
         return PosBlack(pawns, self.queen)
 
     def generate_moves(self):
-        for pawn in self.pawns.pawns:
+        for pawn in self.pawns.squares:
             new_pawn_square = BOARD.get_neighbour(pawn.square, Direction.N)
             if new_pawn_square not in (None, self.queen.square):
                 yield new_pawn_square
@@ -321,17 +321,15 @@ class PosWhite(Position):
             self.pawns.pawn_in_file(self.queen.file) is None and 2 <= self.queen.rank <= 7
 
         for d in Direction:
-            new_queen_square = BOARD.get_neighbour(self.queen.square, d)
-            while new_queen_square:
+            new_queen_square = self.queen.square
+            while BOARD.move(new_queen_square, d):
                 if self.pawns.occupy(new_queen_square):
                     break
-                yield self.get_position_after_move_backwards_queen(new_queen_square)
+                new_position = self.get_position_after_move_backwards_queen(new_queen_square)
+                yield new_position
                 if queen_might_have_captured_a_pawn:
-                    pawn = Pawn(self.queen.square)
-                    position = self.get_position_after_move_backwards_queen(new_queen_square)
-                    position.pawns.set(pawn)
-                    yield position
-                new_queen_square = BOARD.get_neighbour(new_queen_square, d)
+                    new_position.pawns.set(self.queen)  # JWA or do we need to make a deep copy?
+                    yield new_position
 
 
 class PosBlack(Position):
@@ -352,21 +350,19 @@ class PosBlack(Position):
     def __str__(self):
         return self.__repr__()
 
-    def get_position_after_move_queen(self, destination):
+    def get_position_after_move_queen(self, destination: Square):  # JWA is destination always a square?
         pawns = deepcopy(self.pawns)
         pawns.empty_square(destination)
         return PosWhite(pawns, Queen(destination))
 
     def generate_moves(self):
-        queen_square = self.queen.square
         for d in Direction:
-            new_queen_square = BOARD.get_neighbour(queen_square, d)
-            while new_queen_square:
-                if not self.pawns.attack(new_queen_square):
-                    yield new_queen_square
-                if self.pawns.occupy(new_queen_square):
+            new_queen = Queen(self.queen.square)
+            while new_queen.move(d):
+                if not self.pawns.attack(new_queen.square):
+                    yield new_queen.square
+                if self.pawns.occupy(new_queen.square):
                     break
-                new_queen_square = BOARD.get_neighbour(new_queen_square, d)
 
     def generate_next_positions(self):
         for new_queen in self.generate_moves():
@@ -387,7 +383,7 @@ class PosBlack(Position):
             yield self.get_position_after_move_pawn_backwards(promoted_pawn.file)
             return
 
-        for pawn in self.pawns.pawns:
+        for pawn in self.pawns.squares:
             if pawn.rank > 2 and not pawn.is_backward_blocked_by(self.queen):
                 yield self.get_position_after_move_pawn_backwards(pawn.file)
                 if pawn.rank == 4 and (pawn.file, 2) != (self.queen.file, self.queen.rank):
@@ -434,12 +430,8 @@ class EvaluationStore:
     @staticmethod
     def position_to_code(position):
         result = [position.queen.file, position.queen.rank]
-        for f in FILES:
-            pawn = position.pawns.pawn_in_file(f)
-            if pawn is None:
-                result += [f, -1]
-            else:
-                result += [f, pawn.rank]
+        for sq in position.pawns.squares:
+            result += [sq.file, sq.rank]
         return tuple(result)
 
 
@@ -536,9 +528,9 @@ def generate_and_evaluate_all_positions_with_one_pawn():
 
 
 def generate_and_evaluate_all_positions_with_two_pawns():
-    for pawn1 in BOARD.squares:
-        for pawn2 in BOARD.squares:
-            if pawn1.rank > 1 and pawn2.rank > 1 and pawn1.file < pawn2.file:
+    for pawn1 in BOARD.pawn_squares:
+        for pawn2 in BOARD.pawn_squares:
+            if pawn1.file < pawn2.file:
                 pawns = Pawns(pawn1, pawn2)
                 for queen in BOARD.squares:
                     p = PosWhite(pawns, Queen(queen))
