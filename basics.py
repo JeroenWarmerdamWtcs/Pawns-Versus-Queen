@@ -87,7 +87,7 @@ class Board:
     def __init__(self):
         self._square_dict = _generate_all_valid_squares_a8_b8___h1()
         self._neighbours = _generate_neighbours(self._square_dict)
-        self._pawnsquares = [sq for sq in self.squares if sq.rank > 1]
+        self._pawn_squares = [sq for sq in self.squares if sq.rank > 1]
 
     def get_square(self, file, rank):
         return self._square_dict[file, rank]
@@ -101,14 +101,14 @@ class Board:
 
     @property
     def pawn_squares(self):
-        return self._pawnsquares
+        return self._pawn_squares
 
 
 class Piece:
     def __init__(self, square):
         self.__square = square
 
-    def __deepcopy__(self, memodict):
+    def __deepcopy__(self, _):
         return copy(self)
 
     @property
@@ -144,39 +144,11 @@ class Pawn(Piece):
     def is_promoted(self):
         return self.rank == 8
 
-    # def is_blocked_by(self, square):
-    #     return (self.file, self.rank + 1) == (square.file, square.rank)
-    #
-    # def is_backward_blocked_by(self, square):
-    #     return (self.file, self.rank - 1) == (square.file, square.rank)
-    #
-    # def attacks(self, square):
-    #     return ((self.file - 1, self.rank + 1) == (square.file, square.rank) or
-    #             (self.file + 1, self.rank + 1) == (square.file, square.rank))
-    #
-    # def move(self):
-    #     assert self.rank < 8
-    #     self.move_to(self.file, self.rank + 1)
-    #
-    # def move_backwards(self):
-    #     assert self.rank > 2
-    #     self.move_to(self.file, self.rank - 1)
-    #
     def __str__(self):
         return f"{self.square}"
 
 
 class Queen(Piece):
-    # def move(self, direction, nb_steps=1):
-    #     delta_file, delta_rank = direction
-    #     new_file = self.file + nb_steps * delta_file
-    #     new_rank = self.rank + nb_steps * delta_rank
-    #     if 1 <= new_file <= 8 and 1 <= new_rank <= 8:
-    #         self.move_to(new_file, new_rank)
-    #         return True
-    #     else:
-    #         return False
-    #
     def __str__(self):
         return f"Q{self.square}"
 

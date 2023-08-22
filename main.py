@@ -3,6 +3,7 @@ from copy import deepcopy
 from basics import *
 from abc import ABC, abstractmethod
 
+
 # This is a Python script for solving the game "queen vs pawns":
 # The game start with the white pawns and the black queen
 # on the usual initial squares and those are the only pieces.
@@ -74,7 +75,7 @@ from abc import ABC, abstractmethod
 #   So a lower bound is 7^8 * 42 = 242,121,642 positions
 
 # It is too much to consider each position and store its value (win, lose, draw, how many moves).
-# In cases white wins, some pawns might be irrelevant. For instance: white-to-play with pawns on a6 an b6,
+# In cases white wins, some pawns might be irrelevant. For instance: white-to-play with pawns on a6 and b6,
 # is a win. We do not need to evaluate all situation for additional pawns in the other files.
 # However, additional pawns might give a win in less moves. So we will not store and optimise the number
 # of moves till win.  ??????
@@ -83,7 +84,7 @@ from abc import ABC, abstractmethod
 
 # When is a position with white-to-play a win in n moves:
 # - n=1: pawn on seventh rank not blocked by the queen
-# - n>1: the is a legal pawn move, such that every legal queen-move next
+# - n>1: there is a legal pawn move, such that every legal queen-move next
 #         results in a position with white to play and win in at most n-1 moves
 
 # We can generate 'all' positions with white to play and win in n moves as follows:
@@ -91,7 +92,7 @@ from abc import ABC, abstractmethod
 # - n -> n+1: take a position winning position white to play in n moves
 #             generate all possible previous positions with white to play
 #               do a reverse queen move:
-#                   if queen was in a file without pawns, consider with and without pawn on the place of the queen
+#                   if queen was in a file without pawns, consider with and without pawn on the place of the queen,
 #                   queen can come from any place, not occupied or block, but it might be attacked by one pawn (not two)
 #
 #               consider alternative queen moves:
@@ -125,6 +126,11 @@ class Pawns:
 
     def __str__(self):
         return " ".join(map(str, self.squares))
+
+    def __copy__(self):
+        result = Pawns()
+        result._square_dict = self._square_dict.copy()
+        return result
 
     def set(self, square):
         assert isinstance(square, Square)
@@ -186,7 +192,7 @@ class Position(ABC):
     def __init__(self, pawns: Pawns, queen: Queen):
         assert isinstance(pawns, Pawns)
         assert isinstance(queen, Queen)
-        self.pawns = deepcopy(pawns)  # JWA
+        self.pawns = pawns
         self.queen = queen
 
     def is_valid(self):
@@ -218,17 +224,15 @@ class Position(ABC):
 
     @abstractmethod
     def generate_moves(self):
-        return NotImplemented
+        yield NotImplemented
 
     @abstractmethod
     def generate_next_positions(self):
-        while False:
-            yield NotImplemented
+        yield NotImplemented
 
     @abstractmethod
     def generate_prev_positions(self):
-        while False:
-            yield NotImplemented
+        yield NotImplemented
 
     def evaluate(self):
         if self.player() == Player.WHITE:
@@ -264,7 +268,7 @@ class Position(ABC):
             if new_eval == Status.DRAW:
                 best = Status.DRAW
 
-        if stalemate and False:  # JWA
+        if stalemate:  # JWA
             assert self.player() == Player.WHITE
             evaluation_store.save(self, Status.DRAW)
             return Status.DRAW
@@ -294,7 +298,7 @@ class PosWhite(Position):
         return self.__repr__()
 
     def get_position_after_move_pawn_forward(self, new_pawn_square):
-        pawns = deepcopy(self.pawns)
+        pawns = copy(self.pawns)
         pawns.set(new_pawn_square)
         return PosBlack(pawns, self.queen)
 
@@ -321,14 +325,14 @@ class PosWhite(Position):
             self.pawns.pawn_in_file(self.queen.file) is None and 2 <= self.queen.rank <= 7
 
         for d in Direction:
-            new_queen_square = self.queen.square
-            while BOARD.move(new_queen_square, d):
-                if self.pawns.occupy(new_queen_square):
+            new_queen = Queen(self.queen.square)
+            while new_queen.move(d):
+                if self.pawns.occupy(new_queen.square):
                     break
-                new_position = self.get_position_after_move_backwards_queen(new_queen_square)
+                new_position = self.get_position_after_move_backwards_queen(new_queen)
                 yield new_position
                 if queen_might_have_captured_a_pawn:
-                    new_position.pawns.set(self.queen)  # JWA or do we need to make a deep copy?
+                    new_position.pawns.set(self.queen.square)
                     yield new_position
 
 
@@ -337,9 +341,7 @@ class PosBlack(Position):
         return Player.BLACK
 
     def is_valid(self):
-        return (super().is_valid() and
-                self.pawns.count() >= 1 and
-                self.pawns.get_nb_promoted() <= 1)
+        return super().is_valid() and self.pawns.count() >= 1 >= self.pawns.get_nb_promoted()
 
     def is_lost_by_definition(self):
         return self.pawns.get_nb_promoted() > 0
@@ -371,9 +373,9 @@ class PosBlack(Position):
     def get_position_after_move_pawn_backwards(self, pawn_file, twice=False):
         pawns = deepcopy(self.pawns)
         pawn = pawns.pawn_in_file(pawn_file)
-        pawn.move_backwards()
+        pawn.move(Direction.S)
         if twice:
-            pawn.move()
+            pawn.move(Direction.S)
         return PosWhite(pawns, self.queen)
 
     def generate_prev_positions(self):
@@ -384,7 +386,7 @@ class PosBlack(Position):
             return
 
         for pawn in self.pawns.squares:
-            if pawn.rank > 2 and not pawn.is_backward_blocked_by(self.queen):
+            if pawn.rank > 2 and BOARD.get_neighbour(pawn.square, Direction.S) != self.queen.square:
                 yield self.get_position_after_move_pawn_backwards(pawn.file)
                 if pawn.rank == 4 and (pawn.file, 2) != (self.queen.file, self.queen.rank):
                     yield self.get_position_after_move_pawn_backwards(pawn.file, twice=True)
@@ -560,10 +562,6 @@ def generate_and_evaluate_all_positions_with_two_pawns():
 #                             p.evaluate()
 
 
-def generate_and_evaluate_all_positions_with(nb_pawns):
-    pass
-
-
 def generate_and_evaluate():
     generate_and_evaluate_all_positions_without_pawns()
     print((counter_ws, counter_w2, counter_bs, counter_b2))
@@ -586,9 +584,8 @@ def generate_and_evaluate():
     evaluation_store.print_stats()
     generate_and_evaluate_all_positions_with_two_pawns()
     evaluation_store.print_stats()
-    return
-    generate_and_evaluate_all_positions_with_three_pawns()
-    evaluation_store.print_stats()
+    # generate_and_evaluate_all_positions_with_three_pawns()
+    # evaluation_store.print_stats()
 
 
 def do_example():

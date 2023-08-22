@@ -3,7 +3,7 @@ from tkinter import ttk
 from tkinter import StringVar
 import main
 from basics import *
-from BoardUI import Board, WHITE_PAWN_CHARACTER, BLACK_QUEEN_CHARACTER, CHESS_FONT
+from chess_board_frame import Board, WHITE_PAWN_CHARACTER, BLACK_QUEEN_CHARACTER, CHESS_FONT
 
 root = tk.Tk()
 
@@ -19,6 +19,7 @@ def clear_board_and_set_pieces():
     for f, r in pawns.items():
         board_frame.set_white_pawn(f, r)
     if queen is not None:
+        # noinspection PyArgumentList
         board_frame.set_black_queen(*queen)
 
 
@@ -48,6 +49,8 @@ def evaluate_pawns_only_board():
 
 
 def evaluate_pawn_moves():
+    assert queen is not None
+    # noinspection PyArgumentList
     pos = main.PosWhite(get_main_pawns(), Queen(BOARD.get_square(*queen)))
     for new_pawn in pos.generate_moves():
         e = pos.get_position_after_move_pawn_forward(new_pawn).evaluate()
@@ -59,6 +62,8 @@ def evaluate_pawn_moves():
 
 
 def evaluate_queen_moves():
+    assert queen is not None
+    # noinspection PyArgumentList
     pos = main.PosBlack(get_main_pawns(), Queen(BOARD.get_square(*queen)))
     for new_queen in pos.generate_moves():
         e = pos.get_position_after_move_queen(new_queen).evaluate()
@@ -112,7 +117,7 @@ def square_pressed(file, rank):
             queen = None
         else:
             if queen is not None:
-                board_frame.squares(*queen).clear()
+                board_frame.squares[queen[0], queen[1]].clear()
             if pawns.get(file, -1) == rank:
                 del pawns[file]
             square.set_black_queen()
